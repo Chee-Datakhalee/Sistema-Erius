@@ -99,10 +99,6 @@ export default function NovoOrcamento({ precos }: { precos: PrecoTabela[] }) {
           <label className="rotulo" htmlFor="pagamento">Forma de pagamento</label>
           <input id="pagamento" name="pagamento" defaultValue="50% na aprovação e 50% na entrega | PIX" className="campo" />
         </div>
-        <div>
-          <label className="rotulo" htmlFor="desconto_a_vista">Preço à vista (R$, opcional)</label>
-          <input id="desconto_a_vista" name="desconto_a_vista" inputMode="decimal" className="campo" placeholder="Deixe em branco se não houver" />
-        </div>
         <label className="flex items-end gap-2 pb-2 text-sm">
           <input type="checkbox" name="producao_prioritaria" defaultChecked className="h-4 w-4 accent-ciano" />
           Oferecer produção prioritária (+R$35, 48h)

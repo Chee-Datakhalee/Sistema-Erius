@@ -78,19 +78,21 @@ function Bloco({ titulo, cor, total, itens }: { titulo: string; cor: "magenta" |
                 </div>
                 <div className={`whitespace-nowrap font-display text-lg font-bold ${corTexto}`}>{brl(saldo)}</div>
               </div>
-              <form action={registrarPagamento} className="mt-2 flex gap-1.5">
-                <input type="hidden" name="pedido_id" value={p.id} />
-                <input
-                  name="valor"
-                  defaultValue={saldo.toFixed(2).replace(".", ",")}
-                  inputMode="decimal"
-                  className="campo w-24 py-1 text-sm"
-                  aria-label="Valor recebido"
-                />
-                <input name="data" type="date" defaultValue={hoje()} className="campo w-[124px] py-1 text-sm" aria-label="Data" />
-                <Enviar className="botao2 py-1 text-sm">Receber</Enviar>
+              <div className="mt-2 flex items-center gap-1.5">
+                <form action={registrarPagamento} className="flex flex-1 gap-1.5">
+                  <input type="hidden" name="pedido_id" value={p.id} />
+                  <input
+                    name="valor"
+                    defaultValue={saldo.toFixed(2).replace(".", ",")}
+                    inputMode="decimal"
+                    className="campo w-24 py-1 text-sm"
+                    aria-label="Valor recebido"
+                  />
+                  <input name="data" type="date" defaultValue={hoje()} className="campo w-[124px] py-1 text-sm" aria-label="Data" />
+                  <Enviar className="botao2 py-1 text-sm">Receber</Enviar>
+                </form>
                 <Excluir action={excluirPedido} id={p.id} texto={`Excluir o pedido de ${p.cliente}?`} />
-              </form>
+              </div>
             </li>
           ))}
         </ul>

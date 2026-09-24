@@ -7,9 +7,13 @@ import { LOGO_ERIUS_PNG_BASE64 } from "@/lib/logo-base64";
 // Paleta CMYK da Érius
 const CIANO = rgb(0 / 255, 174 / 255, 239 / 255);
 const MAGENTA = rgb(236 / 255, 0 / 255, 140 / 255);
+const AMARELO = rgb(255 / 255, 199 / 255, 0 / 255); // amarelo escurecido p/ legibilidade em texto/linha fina
+const PRETO_FAIXA = rgb(0.09, 0.09, 0.09);
 const PRETO = rgb(0.11, 0.11, 0.11);
-const CINZA = rgb(0.35, 0.37, 0.36);
-const LINHA = rgb(0.85, 0.85, 0.85);
+const AZUL_TEXTO = rgb(0.06, 0.2, 0.32); // título/valores — combina com a faixa ciano escura da referência
+const CINZA = rgb(0.4, 0.42, 0.41);
+const LINHA = rgb(0.87, 0.87, 0.87);
+const BRANCO = rgb(1, 1, 1);
 
 const mm = (v: number) => v * 2.834645669; // mm → pt
 
@@ -52,110 +56,134 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     page.drawText(text, { x: xx, y, size, font, color });
   };
 
-  // Faixas do topo (ciano) e rodapé (magenta) — identidade CMYK
-  page.drawRectangle({ x: 0, y: H - mm(8), width: W, height: mm(8), color: CIANO });
-  page.drawRectangle({ x: 0, y: 0, width: W, height: mm(6), color: MAGENTA });
+  // Fundo branco (página nasce branca por padrão no pdf-lib, mas deixamos explícito)
+  page.drawRectangle({ x: 0, y: 0, width: W, height: H, color: BRANCO });
 
-  // Logo no canto superior esquerdo
-  try {
-    const logoBytes = Buffer.from(LOGO_ERIUS_PNG_BASE64, "base64");
-    const logoImg = await pdf.embedPng(logoBytes);
-    const logoSize = mm(22);
-    page.drawImage(logoImg, { x: M, y: H - mm(20) - logoSize, width: logoSize, height: logoSize });
-  } catch {
-    // segue sem logo se algo falhar na incorporação
-  }
+  // ---------- Faixa superior: preta + 3 cores CMYK coladas embaixo ----------
+  const faixaPretaH = mm(9);
+  const faixaCorH = mm(4);
+  page.drawRectangle({ x: 0, y: H - faixaPretaH, width: W, height: faixaPretaH, color: PRETO_FAIXA });
+  const terco = W / 3;
+  page.drawRectangle({ x: 0, y: H - faixaPretaH - faixaCorH, width: terco, height: faixaCorH, color: CIANO });
+  page.drawRectangle({ x: terco, y: H - faixaPretaH - faixaCorH, width: terco, height: faixaCorH, color: MAGENTA });
+  page.drawRectangle({ x: 2 * terco, y: H - faixaPretaH - faixaCorH, width: W - 2 * terco, height: faixaCorH, color: AMARELO });
 
-  let y = H - mm(24);
-  drawText("PROPOSTA COMERCIAL", W - M, y, { size: 20, font: bold, color: PRETO, align: "right" });
-  drawText(`Nº ${String(id).padStart(4, "0")}/${orc.data.slice(0, 4)}   ·   ${dataBR(orc.data)}`, W - M, y - mm(7), { size: 8.5, color: CINZA, align: "right" });
+  const topoConteudo = H - faixaPretaH - faixaCorH;
 
-  y = H - mm(58);
-  page.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 0.8, color: LINHA });
+  let y = topoConteudo - mm(18);
+  drawText("PROPOSTA COMERCIAL", M, y, { size: 22, font: bold, color: PRETO });
+  page.drawLine({ start: { x: M, y: y - mm(3) }, end: { x: M + mm(58), y: y - mm(3) }, thickness: 1.3, color: CIANO });
+  drawText(dataExtenso(orc.data), M, y - mm(9), { size: 9, color: CINZA });
+
+  y -= mm(24);
+  page.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 0.7, color: LINHA });
 
   y -= mm(10);
   drawText("CLIENTE", M, y, { size: 8, color: CINZA });
-  drawText(orc.cliente.toUpperCase(), M, y - mm(7), { size: 15, font: bold, color: PRETO });
+  drawText(orc.cliente.toUpperCase(), M, y - mm(7), { size: 16, font: bold, color: PRETO });
   drawText("VALIDADE DA PROPOSTA", W - M, y, { size: 8, color: CINZA, align: "right" });
-  drawText(`${orc.validade_dias} dias`, W - M, y - mm(6), { size: 11, font: bold, color: PRETO, align: "right" });
+  drawText(`${orc.validade_dias} dias`, W - M, y - mm(6.5), { size: 11, font: bold, color: PRETO, align: "right" });
 
-  y -= mm(18);
+  y -= mm(17);
   drawText("Apresentamos abaixo os valores para produção de etiquetas adesivas conforme solicitado.", M, y, { size: 9.5, color: CINZA });
-  y -= mm(10);
+  y -= mm(11);
 
-  // Tabela única: ITEM | TAMANHO | QTD | UNITÁRIO | VALOR (como no PDF de referência da Talita)
+  // ---------- Bloco "ETIQUETAS ADESIVAS" — faixa preta com barra magenta lateral ----------
   const temEtiqueta = itens.some((i) => i.tipo === "etiqueta");
   if (temEtiqueta) {
-    drawText("ETIQUETAS ADESIVAS", M, y, { size: 11, font: bold, color: PRETO });
-    y -= mm(5);
-    drawText("Impressão digital colorida  ·  Vinil adesivo  ·  Corte no formato  ·  Acabamento em rolo ou cartela", M, y, { size: 8, color: CINZA });
+    const blocoH = mm(9);
+    page.drawRectangle({ x: M, y: y - blocoH, width: W - 2 * M, height: blocoH, color: PRETO_FAIXA });
+    page.drawRectangle({ x: M, y: y - blocoH, width: mm(1.6), height: blocoH, color: MAGENTA });
+    drawText("ETIQUETAS ADESIVAS", M + mm(6), y - mm(6.3), { size: 10.5, font: bold, color: BRANCO });
+    y -= blocoH;
+    y -= mm(6);
+    drawText(
+      "Impressão digital colorida  ·  Vinil adesivo  ·  Corte no formato  ·  Acabamento em rolo ou cartela",
+      M, y, { size: 8, color: CINZA }
+    );
     y -= mm(8);
   }
 
+  // ---------- Tabela ITEM | TAMANHO | QTD | UNITÁRIO | VALOR ----------
   const colItem = M, colTam = M + mm(78), colQtd = M + mm(108), colUni = M + mm(138), colVal = W - M;
-  drawText("ITEM", colItem, y, { size: 8, font: bold, color: PRETO });
-  drawText("TAMANHO", colTam, y, { size: 8, font: bold, color: PRETO });
-  drawText("QTD", colQtd, y, { size: 8, font: bold, color: PRETO });
-  drawText("UNITÁRIO", colUni, y, { size: 8, font: bold, color: PRETO, align: "right" });
-  drawText("VALOR", colVal, y, { size: 8, font: bold, color: PRETO, align: "right" });
+  drawText("ITEM", colItem, y, { size: 8, font: bold, color: CINZA });
+  drawText("TAMANHO", colTam, y, { size: 8, font: bold, color: CINZA });
+  drawText("QTD", colQtd, y, { size: 8, font: bold, color: CINZA });
+  drawText("UNITÁRIO", colUni, y, { size: 8, font: bold, color: CINZA, align: "right" });
+  drawText("VALOR", colVal, y, { size: 8, font: bold, color: CINZA, align: "right" });
   y -= mm(2.5);
   page.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 0.8, color: PRETO });
 
   for (let i = 0; i < itens.length; i++) {
     const it = itens[i];
-    y -= mm(8);
-    if (i % 2 === 0) page.drawRectangle({ x: M, y: y - mm(2.5), width: W - 2 * M, height: mm(8), color: rgb(0.98, 0.98, 0.98) });
+    y -= mm(9);
     const nomeItem = it.tipo === "etiqueta" ? (it.descricao ? `Adesivo ${it.descricao}` : "Adesivo") : (it.descricao ?? it.servico);
     drawText(nomeItem, colItem, y, { size: 9.5, font: bold, color: PRETO });
-    drawText(it.tamanho ?? "—", colTam, y, { size: 9.5, color: CINZA });
+    drawText(it.tamanho ? `${it.tamanho} cm` : "—", colTam, y, { size: 9.5, color: CINZA });
     drawText(`${it.quantidade} un`, colQtd, y, { size: 9.5, color: CINZA });
     drawText(brl(it.valor_unitario), colUni, y, { size: 9.5, color: CINZA, align: "right" });
-    drawText(brl(it.valor_total), colVal, y, { size: 10, font: bold, color: rgb(0, 0.55, 0.7), align: "right" });
-    y -= mm(2.5);
+    drawText(brl(it.valor_total), colVal, y, { size: 10, font: bold, color: PRETO, align: "right" });
+    y -= mm(3.5);
     page.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 0.4, color: LINHA });
   }
 
+  // ---------- Bloco VALOR TOTAL — faixa preta com barra magenta lateral ----------
   const totalGeral = itens.reduce((s2, i) => s2 + i.valor_total, 0);
   y -= mm(9);
-  drawText("VALOR TOTAL", colItem, y, { size: 10, font: bold, color: PRETO });
-  drawText(brl(totalGeral), colVal, y, { size: 13, font: bold, color: MAGENTA, align: "right" });
+  const totalBlocoH = mm(13);
+  page.drawRectangle({ x: M, y: y - totalBlocoH, width: W - 2 * M, height: totalBlocoH, color: PRETO_FAIXA });
+  page.drawRectangle({ x: M, y: y - totalBlocoH, width: mm(1.6), height: totalBlocoH, color: MAGENTA });
+  drawText("VALOR TOTAL", M + mm(6), y - mm(8.3), { size: 9.5, font: bold, color: BRANCO });
+  drawText(brl(totalGeral), W - M - mm(6), y - mm(8.6), { size: 14, font: bold, color: rgb(1, 1, 1), align: "right" });
+  y -= totalBlocoH;
 
-  if (orc.desconto_a_vista != null) {
-    y -= mm(7);
-    drawText("À VISTA", colItem, y, { size: 9, font: bold, color: CINZA });
-    drawText(brl(Number(orc.desconto_a_vista)), colVal, y, { size: 11, font: bold, color: rgb(0, 0.55, 0.7), align: "right" });
-  }
-
-  // Condições comerciais
-  y -= mm(16);
-  drawText("CONDIÇÕES COMERCIAIS", M, y, { size: 10, font: bold, color: PRETO });
-  page.drawLine({ start: { x: M, y: y - mm(2.5) }, end: { x: M + mm(42), y: y - mm(2.5) }, thickness: 1, color: MAGENTA });
-  y -= mm(9);
+  // ---------- Condições comerciais ----------
+  y -= mm(15);
+  drawText("CONDIÇÕES COMERCIAIS", M, y, { size: 10.5, font: bold, color: PRETO });
+  page.drawLine({ start: { x: M, y: y - mm(3) }, end: { x: M + mm(42), y: y - mm(3) }, thickness: 1.3, color: MAGENTA });
+  y -= mm(10);
 
   const cond: [string, string][] = [
     ["Prazo de produção", orc.prazo ?? "7 dias úteis após aprovação da arte"],
+    ["Forma de pagamento", orc.pagamento ?? "50% na aprovação e 50% na entrega | PIX"],
+    ["Arte final", "Enviar em alta resolução nos formatos PDF, AI ou CDR."],
   ];
+  if (orc.bonificacao) cond.push(["Bonificação", orc.bonificacao]);
   if (orc.producao_prioritaria) {
     cond.push(["Produção prioritária", "Opcional: entrega em até 48h mediante acréscimo de R$ 35,00 ao valor."]);
   }
-  cond.push(["Forma de pagamento", orc.pagamento ?? "50% na aprovação e 50% na entrega | PIX"]);
-  cond.push(["Arte final", "Enviar em alta resolução nos formatos PDF, AI ou CDR."]);
-  if (orc.bonificacao) cond.push(["Bonificação", orc.bonificacao]);
   if (orc.observacoes) cond.push(["Observação", orc.observacoes]);
 
   for (const [titulo, texto] of cond) {
     drawText(titulo, M, y, { size: 8.5, font: bold, color: PRETO });
     const linhasTxt = quebraTexto(reg, 8.5, texto, W - M - (M + mm(38)));
     linhasTxt.forEach((lt, j) => drawText(lt, M + mm(38), y - j * mm(4.2), { size: 8.5, color: CINZA }));
-    y -= linhasTxt.length * mm(4.2) + mm(3.5);
+    y -= linhasTxt.length * mm(4.2) + mm(4);
   }
 
-  // Rodapé
-  page.drawLine({ start: { x: M, y: mm(24) }, end: { x: W - M, y: mm(24) }, thickness: 0.8, color: LINHA });
-  drawText("ÉRIUS COMUNICAÇÃO VISUAL", M, mm(18), { size: 9, font: bold, color: PRETO });
-  drawText("CNPJ 63.889.825/0001-29", M, mm(13.5), { size: 8, color: CINZA });
-  drawText("contato@eriuscomunicacao.com.br  ·  (19) 99001-3719", W - M, mm(18), { size: 8, color: CINZA, align: "right" });
-  drawText("Agradecemos a oportunidade.", W - M, mm(13.5), { size: 8, color: CINZA, align: "right" });
+  // ---------- Rodapé: espelha o cabeçalho — linha fina, texto, e faixa preta+CMYK ----------
+  const faixaBaixoY = faixaPretaH + faixaCorH;
+  page.drawLine({ start: { x: M, y: faixaBaixoY + mm(6) }, end: { x: W - M, y: faixaBaixoY + mm(6) }, thickness: 0.7, color: LINHA });
+  drawText("ÉRIUS COMUNICAÇÃO VISUAL", M, faixaBaixoY + mm(0.5), { size: 9, font: bold, color: PRETO });
+  drawText("CNPJ 63.889.825/0001-29", M, faixaBaixoY - mm(3.5), { size: 8, color: CINZA });
+  drawText("(19) 99001-3719", W - M, faixaBaixoY + mm(0.5), { size: 9, font: bold, color: rgb(0, 0.35, 0.55), align: "right" });
+  drawText("Agradecemos a oportunidade.", W - M, faixaBaixoY - mm(3.5), { size: 8, color: CINZA, align: "right" });
+
+  // faixa preta + 3 cores no rodapé (espelha o topo)
+  page.drawRectangle({ x: 0, y: faixaPretaH, width: terco, height: faixaCorH, color: CIANO });
+  page.drawRectangle({ x: terco, y: faixaPretaH, width: terco, height: faixaCorH, color: MAGENTA });
+  page.drawRectangle({ x: 2 * terco, y: faixaPretaH, width: W - 2 * terco, height: faixaCorH, color: AMARELO });
+  page.drawRectangle({ x: 0, y: 0, width: W, height: faixaPretaH, color: PRETO_FAIXA });
+
+  // Logo no canto superior esquerdo, logo abaixo das faixas
+  try {
+    const logoBytes = Buffer.from(LOGO_ERIUS_PNG_BASE64, "base64");
+    const logoImg = await pdf.embedPng(logoBytes);
+    const logoSize = mm(20);
+    page.drawImage(logoImg, { x: W - M - logoSize, y: topoConteudo - mm(5) - logoSize, width: logoSize, height: logoSize });
+  } catch {
+    // segue sem logo se algo falhar na incorporação
+  }
 
   const bytes = await pdf.save();
   return new NextResponse(Buffer.from(bytes), {
@@ -164,4 +192,10 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       "Content-Disposition": `inline; filename="Proposta_${orc.cliente.replace(/\s+/g, "_")}.pdf"`,
     },
   });
+}
+
+function dataExtenso(iso: string) {
+  const meses = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
+  const [a, m, d] = iso.split("-").map(Number);
+  return `${d} de ${meses[m - 1]} de ${a}`;
 }
