@@ -1,0 +1,162 @@
+import Cabecalho from "@/components/Cabecalho";
+import Excluir from "@/components/Excluir";
+import Enviar from "@/components/Enviar";
+import FormReset from "@/components/FormReset";
+import { carregar, pagoPorPedido, statusPedido } from "@/lib/data";
+import { brl, dataBR, hoje, mesAtual, mesDe, mesLongo, num } from "@/lib/format";
+import { SERVICOS, FORMAS } from "@/lib/constants";
+import { criarPedido, registrarPagamento, excluirPedido, excluirPagamento } from "../actions";
+
+export const dynamic = "force-dynamic";
+
+const corStatus: Record<string, string> = {
+  Pago: "bg-verde/15 text-verde",
+  Parcial: "bg-amarelo/15 text-amarelo",
+  "Não pago": "bg-vermelho/15 text-vermelho",
+};
+
+export default async function Clientes({ searchParams }: { searchParams: { mes?: string } }) {
+  const mes = /^\d{4}-\d{2}$/.test(searchParams.mes ?? "") ? searchParams.mes! : mesAtual();
+  const b = await carregar();
+  const pagos = pagoPorPedido(b.pagamentos);
+  const doMes = b.pedidos.filter((p) => mesDe(p.data) === mes);
+  const abertos = b.pedidos.filter((p) => p.valor_total - (pagos.get(p.id) ?? 0) > 0.005);
+  const nomes = [...new Set(b.pedidos.map((p) => p.cliente))].sort();
+
+  return (
+    <>
+      <Cabecalho titulo="Clientes e Pedidos" sub={`Pedidos de ${mesLongo(mes)}`} mes={mes} />
+      <div className="space-y-4 p-4 lg:p-5">
+        <section className="painel p-5">
+          <h2 className="titulo mb-4">Novo pedido</h2>
+          <FormReset action={criarPedido} className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
+            <div className="col-span-2">
+              <label className="rotulo" htmlFor="cliente">Cliente</label>
+              <input id="cliente" name="cliente" list="lista-clientes" required className="campo" placeholder="Nome do cliente" />
+              <datalist id="lista-clientes">{nomes.map((n) => <option key={n} value={n} />)}</datalist>
+            </div>
+            <div>
+              <label className="rotulo" htmlFor="servico">Serviço</label>
+              <select id="servico" name="servico" className="campo">{SERVICOS.map((s) => <option key={s}>{s}</option>)}</select>
+            </div>
+            <div className="col-span-2 md:col-span-1 xl:col-span-2">
+              <label className="rotulo" htmlFor="descricao">Descrição</label>
+              <input id="descricao" name="descricao" className="campo" placeholder="Ex: 5x5 fosco" />
+            </div>
+            <div>
+              <label className="rotulo" htmlFor="quantidade">Quantidade</label>
+              <input id="quantidade" name="quantidade" inputMode="numeric" className="campo" placeholder="500" />
+            </div>
+            <div>
+              <label className="rotulo" htmlFor="data">Data</label>
+              <input id="data" name="data" type="date" defaultValue={hoje()} className="campo" />
+            </div>
+            <div>
+              <label className="rotulo" htmlFor="valor_base">Valor (R$)</label>
+              <input id="valor_base" name="valor_base" inputMode="decimal" required className="campo" placeholder="190,00" />
+            </div>
+            <div>
+              <label className="rotulo" htmlFor="valor_pago">Já recebeu (R$)</label>
+              <input id="valor_pago" name="valor_pago" inputMode="decimal" className="campo" placeholder="Sinal, se houver" />
+            </div>
+            <div>
+              <label className="rotulo" htmlFor="forma_pagto">Pagamento</label>
+              <select id="forma_pagto" name="forma_pagto" className="campo">{FORMAS.map((f) => <option key={f}>{f}</option>)}</select>
+            </div>
+            <label className="flex items-end gap-2 pb-2 text-sm">
+              <input type="checkbox" name="prioridade" className="h-4 w-4 accent-verde" /> Prioridade 48h (+{brl(b.config.adicional_prioridade)})
+            </label>
+            <div className="col-span-2 md:col-span-3 xl:col-span-4">
+              <label className="rotulo" htmlFor="observacoes">Observações</label>
+              <input id="observacoes" name="observacoes" className="campo" />
+            </div>
+            <div className="col-span-2 flex items-end md:col-span-1 xl:col-span-2"><Enviar>Salvar pedido</Enviar></div>
+          </FormReset>
+        </section>
+
+        <section className="painel overflow-x-auto p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="titulo">Pedidos do mês</h2>
+            <span className="text-sm text-mute">{doMes.length} pedidos · {brl(doMes.reduce((s, p) => s + p.valor_total, 0))}</span>
+          </div>
+          <TabelaPedidos lista={doMes} pagos={pagos} b={b} />
+        </section>
+
+        <section className="painel overflow-x-auto p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="titulo">Saldos em aberto (todos os meses)</h2>
+            <span className="text-sm text-amarelo">{brl(abertos.reduce((s, p) => s + p.valor_total - (pagos.get(p.id) ?? 0), 0))}</span>
+          </div>
+          <TabelaPedidos lista={abertos} pagos={pagos} b={b} />
+        </section>
+      </div>
+    </>
+  );
+}
+
+function TabelaPedidos({ lista, pagos, b }: { lista: Awaited<ReturnType<typeof carregar>>["pedidos"]; pagos: Map<number, number>; b: Awaited<ReturnType<typeof carregar>> }) {
+  if (!lista.length) return <p className="text-sm text-mute">Nada por aqui.</p>;
+  return (
+    <table className="tabela min-w-[980px]">
+      <thead>
+        <tr>
+          <th>Data</th><th>Cliente</th><th>Serviço</th><th className="text-right">Qtd</th>
+          <th className="text-right">Total</th><th className="text-right">Pago</th><th className="text-right">Saldo</th>
+          <th>Status</th><th className="w-[280px]">Receber</th><th />
+        </tr>
+      </thead>
+      <tbody>
+        {lista.map((p) => {
+          const pago = pagos.get(p.id) ?? 0;
+          const saldo = p.valor_total - pago;
+          const st = statusPedido(p.valor_total, pago);
+          const pgs = b.pagamentos.filter((x) => x.pedido_id === p.id);
+          return (
+            <tr key={p.id}>
+              <td className="whitespace-nowrap text-mute">{dataBR(p.data)}</td>
+              <td>
+                <div className="font-medium">{p.cliente}</div>
+                {p.observacoes && <div className="text-xs text-mute">{p.observacoes}</div>}
+              </td>
+              <td>
+                {p.servico}
+                {p.descricao && <span className="text-mute"> · {p.descricao}</span>}
+                {p.prioridade && <span className="ml-2 rounded bg-roxo/20 px-1.5 py-0.5 text-[11px] text-roxo">48h</span>}
+              </td>
+              <td className="text-right">{num(p.quantidade)}</td>
+              <td className="text-right">{brl(p.valor_total)}</td>
+              <td className="text-right">
+                {brl(pago)}
+                {pgs.length > 0 && (
+                  <details className="text-left text-xs text-mute">
+                    <summary className="cursor-pointer text-right">{pgs.length} pgto</summary>
+                    {pgs.map((x) => (
+                      <div key={x.id} className="flex items-center justify-end gap-1">
+                        {dataBR(x.data)} {brl(x.valor)} <Excluir action={excluirPagamento} id={x.id} texto="Excluir este pagamento?" />
+                      </div>
+                    ))}
+                  </details>
+                )}
+              </td>
+              <td className={`text-right ${saldo > 0.005 ? "text-amarelo" : "text-mute"}`}>{brl(Math.max(0, saldo))}</td>
+              <td><span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs ${corStatus[st]}`}>{st}</span></td>
+              <td>
+                {saldo > 0.005 ? (
+                  <form action={registrarPagamento} className="flex gap-1.5">
+                    <input type="hidden" name="pedido_id" value={p.id} />
+                    <input name="valor" defaultValue={saldo.toFixed(2).replace(".", ",")} inputMode="decimal" className="campo w-24 py-1" aria-label="Valor recebido" />
+                    <input name="data" type="date" defaultValue={hoje()} className="campo w-[130px] py-1" aria-label="Data" />
+                    <Enviar className="botao2">Receber</Enviar>
+                  </form>
+                ) : (
+                  <span className="text-xs text-mute">Quitado</span>
+                )}
+              </td>
+              <td><Excluir action={excluirPedido} id={p.id} texto={`Excluir o pedido de ${p.cliente}?`} /></td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
