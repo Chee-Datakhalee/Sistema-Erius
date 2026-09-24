@@ -1,10 +1,11 @@
 import { ISeta } from "./Icones";
 
 export default function Kpi({
-  titulo, valor, variacao, cor, Icone, inverso,
+  titulo, valor, variacao, cor, Icone, inverso, rodape,
 }: {
   titulo: string; valor: string; variacao: number | null; cor: string;
   Icone: (p: { className?: string }) => JSX.Element; inverso?: boolean;
+  rodape?: { rotulo: string; valor: string };
 }) {
   const sobe = (variacao ?? 0) >= 0;
   const bom = inverso ? !sobe : sobe;
@@ -28,6 +29,12 @@ export default function Kpi({
         )}
       </div>
       {variacao !== null && <div className="mt-1 text-xs text-mute">vs. mês anterior</div>}
+      {rodape && (
+        <div className="mt-3 flex items-center justify-between border-t border-line pt-3 text-sm">
+          <span className="text-mute">{rodape.rotulo}</span>
+          <span className="font-display font-semibold text-ink">{rodape.valor}</span>
+        </div>
+      )}
     </div>
   );
 }

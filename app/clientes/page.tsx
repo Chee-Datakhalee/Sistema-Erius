@@ -2,6 +2,7 @@ import Cabecalho from "@/components/Cabecalho";
 import Excluir from "@/components/Excluir";
 import Enviar from "@/components/Enviar";
 import FormReset from "@/components/FormReset";
+import PainelCobranca from "@/components/PainelCobranca";
 import { carregar, pagoPorPedido, statusPedido } from "@/lib/data";
 import { brl, dataBR, hoje, mesAtual, mesDe, mesLongo, num } from "@/lib/format";
 import { SERVICOS, FORMAS } from "@/lib/constants";
@@ -22,6 +23,21 @@ export default async function Clientes({ searchParams }: { searchParams: { mes?:
   const doMes = b.pedidos.filter((p) => mesDe(p.data) === mes);
   const abertos = b.pedidos.filter((p) => p.valor_total - (pagos.get(p.id) ?? 0) > 0.005);
   const nomes = [...new Set(b.pedidos.map((p) => p.cliente))].sort();
+
+  // primeira compra de cada cliente (por nome, no histórico inteiro) → marca "Novo"
+  const primeiraCompra = new Map<string, number>();
+  [...b.pedidos].sort((a, c) => a.data.localeCompare(c.data) || a.id - c.id).forEach((p) => {
+    const chave = p.cliente.trim().toLowerCase();
+    if (!primeiraCompra.has(chave)) primeiraCompra.set(chave, p.id);
+  });
+  const itensCobranca = abertos
+    .map((p) => ({
+      pedido: p,
+      pago: pagos.get(p.id) ?? 0,
+      saldo: p.valor_total - (pagos.get(p.id) ?? 0),
+      novo: primeiraCompra.get(p.cliente.trim().toLowerCase()) === p.id,
+    }))
+    .sort((a, c) => c.saldo - a.saldo);
 
   return (
     <>
@@ -74,21 +90,19 @@ export default async function Clientes({ searchParams }: { searchParams: { mes?:
           </FormReset>
         </section>
 
-        <section className="painel overflow-x-auto p-5">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="titulo">Pedidos do mês</h2>
-            <span className="text-sm text-mute">{doMes.length} pedidos · {brl(doMes.reduce((s, p) => s + p.valor_total, 0))}</span>
-          </div>
-          <TabelaPedidos lista={doMes} pagos={pagos} b={b} />
-        </section>
+        <div>
+          <h2 className="titulo mb-3">Quem falta pagar</h2>
+          <PainelCobranca itens={itensCobranca} />
+        </div>
 
-        <section className="painel overflow-x-auto p-5">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="titulo">Saldos em aberto (todos os meses)</h2>
-            <span className="text-sm text-amarelo">{brl(abertos.reduce((s, p) => s + p.valor_total - (pagos.get(p.id) ?? 0), 0))}</span>
+        <details className="painel overflow-x-auto p-5">
+          <summary className="titulo cursor-pointer">
+            Ver todos os pedidos do mês <span className="text-sm font-normal text-mute">({doMes.length} pedidos · {brl(doMes.reduce((s, p) => s + p.valor_total, 0))})</span>
+          </summary>
+          <div className="mt-4">
+            <TabelaPedidos lista={doMes} pagos={pagos} b={b} />
           </div>
-          <TabelaPedidos lista={abertos} pagos={pagos} b={b} />
-        </section>
+        </details>
       </div>
     </>
   );
