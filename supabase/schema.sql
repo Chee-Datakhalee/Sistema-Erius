@@ -273,3 +273,8 @@ create table if not exists orcamento_itens (
 
 alter table orcamentos enable row level security;
 alter table orcamento_itens enable row level security;
+
+-- Campos extras em orcamentos (adicionado depois): desconto à vista e bonificação
+alter table orcamentos add column if not exists desconto_a_vista numeric(12,2);
+alter table orcamentos add column if not exists bonificacao text;
+alter table orcamentos add column if not exists producao_prioritaria boolean not null default false;

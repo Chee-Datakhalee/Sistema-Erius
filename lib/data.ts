@@ -180,6 +180,7 @@ export type Orcamento = {
   id: number; cliente: string; data: string; validade_dias: number;
   status: "pendente" | "aprovado" | "recusado"; prazo: string | null;
   pagamento: string | null; observacoes: string | null;
+  desconto_a_vista: number | null; bonificacao: string | null; producao_prioritaria: boolean;
 };
 
 export async function carregarOrcamentos() {
@@ -189,6 +190,7 @@ export async function carregarOrcamentos() {
     q<OrcamentoItem>(s.from("orcamento_itens").select("*").order("ordem")),
   ]);
   itensRaw.forEach((i) => { i.valor_unitario = n(i.valor_unitario); i.valor_total = n(i.valor_total); });
+  orcs.forEach((o) => { o.desconto_a_vista = o.desconto_a_vista != null ? n(o.desconto_a_vista) : null; });
   const itensPorOrc = new Map<number, OrcamentoItem[]>();
   itensRaw.forEach((i) => {
     if (!itensPorOrc.has(i.orcamento_id)) itensPorOrc.set(i.orcamento_id, []);

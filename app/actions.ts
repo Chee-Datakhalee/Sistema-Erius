@@ -175,9 +175,12 @@ export async function criarOrcamento(fd: FormData) {
       cliente,
       data: txt(fd.get("data")) ?? hoje(),
       validade_dias: Math.round(valor(fd.get("validade_dias"))) || 15,
-      prazo: txt(fd.get("prazo")) ?? "5 dias úteis após aprovação da arte",
+      prazo: txt(fd.get("prazo")) ?? "7 dias úteis após aprovação da arte",
       pagamento: txt(fd.get("pagamento")) ?? "50% na aprovação e 50% na entrega | PIX",
       observacoes: txt(fd.get("observacoes")),
+      desconto_a_vista: fd.get("desconto_a_vista") ? valor(fd.get("desconto_a_vista")) : null,
+      bonificacao: txt(fd.get("bonificacao")),
+      producao_prioritaria: fd.get("producao_prioritaria") === "on",
     })
     .select("id")
     .single();

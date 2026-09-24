@@ -2,14 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { db } from "@/lib/supabase";
 import { brl, dataBR } from "@/lib/format";
+import { LOGO_ERIUS_PNG_BASE64 } from "@/lib/logo-base64";
 
-// Cores CMYK da Érius, em RGB 0–1 (pdf-lib usa esse formato)
+// Paleta CMYK da Érius
 const CIANO = rgb(0 / 255, 174 / 255, 239 / 255);
 const MAGENTA = rgb(236 / 255, 0 / 255, 140 / 255);
-const AMARELO = rgb(255 / 255, 242 / 255, 0 / 255);
 const PRETO = rgb(0.11, 0.11, 0.11);
 const CINZA = rgb(0.35, 0.37, 0.36);
-const CLARO = rgb(0.96, 0.96, 0.96);
 const LINHA = rgb(0.85, 0.85, 0.85);
 
 const mm = (v: number) => v * 2.834645669; // mm → pt
@@ -53,12 +52,21 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     page.drawText(text, { x: xx, y, size, font, color });
   };
 
-  // Faixas ciano no topo e magenta no rodapé (identidade CMYK)
+  // Faixas do topo (ciano) e rodapé (magenta) — identidade CMYK
   page.drawRectangle({ x: 0, y: H - mm(8), width: W, height: mm(8), color: CIANO });
   page.drawRectangle({ x: 0, y: 0, width: W, height: mm(6), color: MAGENTA });
 
+  // Logo no canto superior esquerdo
+  try {
+    const logoBytes = Buffer.from(LOGO_ERIUS_PNG_BASE64, "base64");
+    const logoImg = await pdf.embedPng(logoBytes);
+    const logoSize = mm(22);
+    page.drawImage(logoImg, { x: M, y: H - mm(20) - logoSize, width: logoSize, height: logoSize });
+  } catch {
+    // segue sem logo se algo falhar na incorporação
+  }
+
   let y = H - mm(24);
-  // Espaço reservado para logo: canto superior esquerdo, ~60x30mm
   drawText("PROPOSTA COMERCIAL", W - M, y, { size: 20, font: bold, color: PRETO, align: "right" });
   drawText(`Nº ${String(id).padStart(4, "0")}/${orc.data.slice(0, 4)}   ·   ${dataBR(orc.data)}`, W - M, y - mm(7), { size: 8.5, color: CINZA, align: "right" });
 
@@ -72,77 +80,67 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   drawText(`${orc.validade_dias} dias`, W - M, y - mm(6), { size: 11, font: bold, color: PRETO, align: "right" });
 
   y -= mm(18);
-  drawText("Apresentamos abaixo os valores para os itens solicitados.", M, y, { size: 9.5, color: CINZA });
+  drawText("Apresentamos abaixo os valores para produção de etiquetas adesivas conforme solicitado.", M, y, { size: 9.5, color: CINZA });
   y -= mm(10);
 
-  // Agrupa itens por (servico + tamanho) para blocos, ou cada manual isolado
-  type Grupo = { titulo: string; linhas: { qtd: string; uni: string; tot: string }[] };
-  const grupos: Grupo[] = [];
-  const porTitulo = new Map<string, Grupo>();
-  for (const it of itens) {
-    const titulo = it.tipo === "etiqueta"
-      ? `ETIQUETA ADESIVA ${it.tamanho}`
-      : (it.descricao ?? it.servico).toUpperCase();
-    if (!porTitulo.has(titulo)) {
-      const g: Grupo = { titulo, linhas: [] };
-      porTitulo.set(titulo, g);
-      grupos.push(g);
-    }
-    porTitulo.get(titulo)!.linhas.push({
-      qtd: `${it.quantidade} un.`,
-      uni: brl(it.valor_unitario),
-      tot: brl(it.valor_total),
-    });
+  // Tabela única: ITEM | TAMANHO | QTD | UNITÁRIO | VALOR (como no PDF de referência da Talita)
+  const temEtiqueta = itens.some((i) => i.tipo === "etiqueta");
+  if (temEtiqueta) {
+    drawText("ETIQUETAS ADESIVAS", M, y, { size: 11, font: bold, color: PRETO });
+    y -= mm(5);
+    drawText("Impressão digital colorida  ·  Vinil adesivo  ·  Corte no formato  ·  Acabamento em rolo ou cartela", M, y, { size: 8, color: CINZA });
+    y -= mm(8);
   }
 
-  for (let gi = 0; gi < grupos.length; gi++) {
-    const g = grupos[gi];
-    if (gi > 0) y -= mm(9);
+  const colItem = M, colTam = M + mm(78), colQtd = M + mm(108), colUni = M + mm(138), colVal = W - M;
+  drawText("ITEM", colItem, y, { size: 8, font: bold, color: PRETO });
+  drawText("TAMANHO", colTam, y, { size: 8, font: bold, color: PRETO });
+  drawText("QTD", colQtd, y, { size: 8, font: bold, color: PRETO });
+  drawText("UNITÁRIO", colUni, y, { size: 8, font: bold, color: PRETO, align: "right" });
+  drawText("VALOR", colVal, y, { size: 8, font: bold, color: PRETO, align: "right" });
+  y -= mm(2.5);
+  page.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 0.8, color: PRETO });
 
-    // cabeçalho do item (faixa ciano)
-    page.drawRectangle({ x: M, y: y - mm(11), width: W - 2 * M, height: mm(11), color: CIANO });
-    drawText(`ITEM ${String(gi + 1).padStart(2, "0")}  ·  ${g.titulo}`, M + mm(4), y - mm(7.5), { size: 10.5, font: bold, color: rgb(1, 1, 1) });
-    y -= mm(11);
-
-    // cabeçalho da tabela
-    const col1 = M + mm(4), col2 = W / 2 + mm(5), col3 = W - M - mm(4);
-    y -= mm(7);
-    drawText("QUANTIDADE", col1, y, { size: 8, font: bold, color: PRETO });
-    drawText("VALOR UNITÁRIO", col2, y, { size: 8, font: bold, color: PRETO, align: "right" });
-    drawText("VALOR TOTAL", col3, y, { size: 8, font: bold, color: PRETO, align: "right" });
-    page.drawLine({ start: { x: M, y: y - mm(2.5) }, end: { x: W - M, y: y - mm(2.5) }, thickness: 0.6, color: LINHA });
-
-    for (let i = 0; i < g.linhas.length; i++) {
-      const l = g.linhas[i];
-      y -= mm(8);
-      if (i % 2 === 0) page.drawRectangle({ x: M, y: y - mm(2.5), width: W - 2 * M, height: mm(8), color: rgb(0.98, 0.98, 0.98) });
-      drawText(l.qtd, col1, y, { size: 10, font: bold, color: PRETO });
-      drawText(l.uni, col2, y, { size: 10, color: CINZA, align: "right" });
-      drawText(l.tot, col3, y, { size: 10.5, font: bold, color: rgb(0, 0.55, 0.7), align: "right" });
-      page.drawLine({ start: { x: M, y: y - mm(2.5) }, end: { x: W - M, y: y - mm(2.5) }, thickness: 0.4, color: LINHA });
-    }
+  for (let i = 0; i < itens.length; i++) {
+    const it = itens[i];
+    y -= mm(8);
+    if (i % 2 === 0) page.drawRectangle({ x: M, y: y - mm(2.5), width: W - 2 * M, height: mm(8), color: rgb(0.98, 0.98, 0.98) });
+    const nomeItem = it.tipo === "etiqueta" ? (it.descricao ? `Adesivo ${it.descricao}` : "Adesivo") : (it.descricao ?? it.servico);
+    drawText(nomeItem, colItem, y, { size: 9.5, font: bold, color: PRETO });
+    drawText(it.tamanho ?? "—", colTam, y, { size: 9.5, color: CINZA });
+    drawText(`${it.quantidade} un`, colQtd, y, { size: 9.5, color: CINZA });
+    drawText(brl(it.valor_unitario), colUni, y, { size: 9.5, color: CINZA, align: "right" });
+    drawText(brl(it.valor_total), colVal, y, { size: 10, font: bold, color: rgb(0, 0.55, 0.7), align: "right" });
     y -= mm(2.5);
+    page.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 0.4, color: LINHA });
   }
 
   const totalGeral = itens.reduce((s2, i) => s2 + i.valor_total, 0);
-  y -= mm(10);
-  page.drawLine({ start: { x: M, y }, end: { x: W - M, y }, thickness: 1, color: PRETO });
-  y -= mm(8);
-  drawText("VALOR TOTAL DA PROPOSTA", M, y, { size: 10, font: bold, color: PRETO });
-  drawText(brl(totalGeral), W - M, y, { size: 15, font: bold, color: MAGENTA, align: "right" });
+  y -= mm(9);
+  drawText("VALOR TOTAL", colItem, y, { size: 10, font: bold, color: PRETO });
+  drawText(brl(totalGeral), colVal, y, { size: 13, font: bold, color: MAGENTA, align: "right" });
+
+  if (orc.desconto_a_vista != null) {
+    y -= mm(7);
+    drawText("À VISTA", colItem, y, { size: 9, font: bold, color: CINZA });
+    drawText(brl(Number(orc.desconto_a_vista)), colVal, y, { size: 11, font: bold, color: rgb(0, 0.55, 0.7), align: "right" });
+  }
 
   // Condições comerciais
-  y -= mm(14);
+  y -= mm(16);
   drawText("CONDIÇÕES COMERCIAIS", M, y, { size: 10, font: bold, color: PRETO });
-  page.drawLine({ start: { x: M, y: y - mm(2.5) }, end: { x: M + mm(42), y: y - mm(2.5) }, thickness: 1, color: CIANO });
+  page.drawLine({ start: { x: M, y: y - mm(2.5) }, end: { x: M + mm(42), y: y - mm(2.5) }, thickness: 1, color: MAGENTA });
   y -= mm(9);
 
   const cond: [string, string][] = [
-    ["Prazo de produção", orc.prazo ?? "5 dias úteis após aprovação da arte"],
-    ["Forma de pagamento", orc.pagamento ?? "50% na aprovação e 50% na entrega | PIX"],
-    ["Arte final", "Enviada pelo cliente em alta resolução (PDF, AI ou CDR) ou desenvolvida pela Érius mediante orçamento à parte."],
-    ["Frete", "A combinar. Retirada no local sem custo."],
+    ["Prazo de produção", orc.prazo ?? "7 dias úteis após aprovação da arte"],
   ];
+  if (orc.producao_prioritaria) {
+    cond.push(["Produção prioritária", "Opcional: entrega em até 48h mediante acréscimo de R$ 35,00 ao valor."]);
+  }
+  cond.push(["Forma de pagamento", orc.pagamento ?? "50% na aprovação e 50% na entrega | PIX"]);
+  cond.push(["Arte final", "Enviar em alta resolução nos formatos PDF, AI ou CDR."]);
+  if (orc.bonificacao) cond.push(["Bonificação", orc.bonificacao]);
   if (orc.observacoes) cond.push(["Observação", orc.observacoes]);
 
   for (const [titulo, texto] of cond) {

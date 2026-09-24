@@ -6,7 +6,7 @@ Sistema interno de gestão financeira da Érius (Next.js + Supabase + Vercel). S
 
 1. **Supabase**: crie um projeto, abra o SQL Editor, cole todo o `supabase/schema.sql` e rode.
    Isso cria as tabelas e já importa os dados da planilha (pedidos, pagamentos, gastos, despesas fixas, tabela de preços, orçamentos).
-   Se você já rodou uma versão anterior deste arquivo, rode só a parte nova: procure `-- Orçamentos (adicionado depois)` no arquivo e execute a partir dali.
+   Se você já rodou uma versão anterior deste arquivo, rode só a parte nova: procure `-- Orçamentos (adicionado depois)` no arquivo e execute a partir dali (inclui também os campos de desconto à vista, bonificação e produção prioritária, adicionados depois com `alter table`).
 2. **GitHub**: suba esta pasta para um repositório.
 3. **Vercel**: importe o repositório e adicione as variáveis de ambiente:
    - `SUPABASE_URL` (Project Settings > API > Project URL)
