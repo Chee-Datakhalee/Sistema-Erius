@@ -242,3 +242,34 @@ insert into precos (tamanho, quantidade, preco) values
 ('10x10',950,802.74),
 ('10x10',1000,844.95)
 on conflict do nothing;
+
+-- =========================================================
+-- Orçamentos (adicionado depois)
+-- =========================================================
+create table if not exists orcamentos (
+  id bigint generated always as identity primary key,
+  cliente text not null,
+  data date not null default current_date,
+  validade_dias integer not null default 15,
+  status text not null default 'pendente' check (status in ('pendente','aprovado','recusado')),
+  prazo text default '5 dias úteis após aprovação da arte',
+  pagamento text default '50% na aprovação e 50% na entrega | PIX',
+  observacoes text,
+  created_at timestamptz default now()
+);
+
+create table if not exists orcamento_itens (
+  id bigint generated always as identity primary key,
+  orcamento_id bigint not null references orcamentos(id) on delete cascade,
+  tipo text not null default 'manual' check (tipo in ('etiqueta','manual')),
+  servico text not null default 'Etiquetas',
+  tamanho text,
+  quantidade integer not null default 1,
+  descricao text,
+  valor_unitario numeric(12,2) not null default 0,
+  valor_total numeric(12,2) not null default 0,
+  ordem integer not null default 0
+);
+
+alter table orcamentos enable row level security;
+alter table orcamento_itens enable row level security;

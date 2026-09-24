@@ -157,3 +157,84 @@ export async function salvarPreco(fd: FormData) {
   );
   revalidatePath("/config");
 }
+
+/* ---------- Orçamentos ---------- */
+export async function criarOrcamento(fd: FormData) {
+  const s = db();
+  const cliente = txt(fd.get("cliente")) ?? "Sem nome";
+  const itensJson = String(fd.get("itens") ?? "[]");
+  const itens = JSON.parse(itensJson) as {
+    tipo: "etiqueta" | "manual"; servico: string; tamanho: string | null;
+    quantidade: number; descricao: string | null; valor_unitario: number; valor_total: number;
+  }[];
+  if (!itens.length) throw new Error("Adicione ao menos um item ao orçamento.");
+
+  const { data: orc, error } = await s
+    .from("orcamentos")
+    .insert({
+      cliente,
+      data: txt(fd.get("data")) ?? hoje(),
+      validade_dias: Math.round(valor(fd.get("validade_dias"))) || 15,
+      prazo: txt(fd.get("prazo")) ?? "5 dias úteis após aprovação da arte",
+      pagamento: txt(fd.get("pagamento")) ?? "50% na aprovação e 50% na entrega | PIX",
+      observacoes: txt(fd.get("observacoes")),
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+
+  await run(
+    s.from("orcamento_itens").insert(
+      itens.map((it, i) => ({
+        orcamento_id: orc.id,
+        tipo: it.tipo,
+        servico: it.servico,
+        tamanho: it.tamanho,
+        quantidade: it.quantidade,
+        descricao: it.descricao,
+        valor_unitario: it.valor_unitario,
+        valor_total: it.valor_total,
+        ordem: i,
+      }))
+    )
+  );
+  tudo();
+  revalidatePath("/orcamentos");
+  return orc.id as number;
+}
+
+export async function aprovarOrcamento(fd: FormData) {
+  const s = db();
+  const id = Number(fd.get("id"));
+  const { data: orc, error: e1 } = await s.from("orcamentos").select("*").eq("id", id).single();
+  if (e1 || !orc) throw new Error(e1?.message ?? "Orçamento não encontrado.");
+  const { data: itens, error: e2 } = await s.from("orcamento_itens").select("*").eq("orcamento_id", id).order("ordem");
+  if (e2) throw new Error(e2.message);
+
+  const pedidosNovos = (itens ?? []).map((it) => ({
+    cliente: orc.cliente,
+    servico: it.servico,
+    descricao: it.descricao ?? (it.tamanho ? `${it.tamanho}` : null),
+    quantidade: it.quantidade,
+    data: hoje(),
+    prioridade: false,
+    valor_base: Number(it.valor_total),
+    adicional_prioridade: 0,
+    forma_pagto: "Pix",
+    observacoes: `Aprovado do orçamento #${id}`,
+  }));
+  if (pedidosNovos.length) await run(s.from("pedidos").insert(pedidosNovos));
+  await run(s.from("orcamentos").update({ status: "aprovado" }).eq("id", id));
+  tudo();
+  revalidatePath("/orcamentos");
+}
+
+export async function recusarOrcamento(fd: FormData) {
+  await run(db().from("orcamentos").update({ status: "recusado" }).eq("id", Number(fd.get("id"))));
+  revalidatePath("/orcamentos");
+}
+
+export async function excluirOrcamento(fd: FormData) {
+  await run(db().from("orcamentos").delete().eq("id", Number(fd.get("id"))));
+  revalidatePath("/orcamentos");
+}

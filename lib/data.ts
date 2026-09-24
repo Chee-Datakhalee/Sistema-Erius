@@ -170,3 +170,29 @@ export async function carregarPrecos() {
   const rows = await q<Preco>(db().from("precos").select("*").order("quantidade"));
   return rows.map((r) => ({ ...r, preco: n(r.preco) }));
 }
+
+export type OrcamentoItem = {
+  id: number; orcamento_id: number; tipo: "etiqueta" | "manual"; servico: string;
+  tamanho: string | null; quantidade: number; descricao: string | null;
+  valor_unitario: number; valor_total: number; ordem: number;
+};
+export type Orcamento = {
+  id: number; cliente: string; data: string; validade_dias: number;
+  status: "pendente" | "aprovado" | "recusado"; prazo: string | null;
+  pagamento: string | null; observacoes: string | null;
+};
+
+export async function carregarOrcamentos() {
+  const s = db();
+  const [orcs, itensRaw] = await Promise.all([
+    q<Orcamento>(s.from("orcamentos").select("*").order("data", { ascending: false }).order("id", { ascending: false })),
+    q<OrcamentoItem>(s.from("orcamento_itens").select("*").order("ordem")),
+  ]);
+  itensRaw.forEach((i) => { i.valor_unitario = n(i.valor_unitario); i.valor_total = n(i.valor_total); });
+  const itensPorOrc = new Map<number, OrcamentoItem[]>();
+  itensRaw.forEach((i) => {
+    if (!itensPorOrc.has(i.orcamento_id)) itensPorOrc.set(i.orcamento_id, []);
+    itensPorOrc.get(i.orcamento_id)!.push(i);
+  });
+  return orcs.map((o) => ({ ...o, itens: itensPorOrc.get(o.id) ?? [] }));
+}
