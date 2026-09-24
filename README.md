@@ -1,6 +1,6 @@
 # Érius Gestão
 
-Sistema interno de gestão financeira da Érius (Next.js + Supabase + Vercel). Sem login.
+Sistema interno de gestão financeira da Érius (Next.js + Supabase + Vercel). Sem login. Identidade visual CMYK da Érius.
 
 ## Subir em 3 passos
 
@@ -15,6 +15,9 @@ Para rodar local: `npm install`, copie `.env.example` para `.env.local`, preench
 
 ## Segurança
 A chave do Supabase fica só no servidor (nunca vai pro navegador) e o RLS está ligado sem políticas, então ninguém mexe no banco pela chave pública. A página não é indexada no Google.
+
+## Cores
+Segue a identidade CMYK da logo Érius: fundo preto (#0A0A0A), ciano (#00AEEF), magenta (#EC008C), amarelo (#FFF200). Definidas em `tailwind.config.ts`.
 
 ## Como os números são calculados
 - **Faturamento** do mês = soma dos pedidos com data no mês (pago ou não).

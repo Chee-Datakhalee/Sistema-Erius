@@ -13,7 +13,7 @@ export default async function Dashboard({ searchParams }: { searchParams: { mes?
   const d = montarDashboard(await carregar(), mes);
   const a = d.atual;
   const maxProd = Math.max(1, ...d.produtos.map((p) => p.valor));
-  const corProd = ["#22C55E", "#3B82F6", "#8B5CF6", "#FACC15", "#22D3EE", "#94A3B8"];
+  const corProd = ["#00AEEF", "#EC008C", "#FFF200", "#F5F5F5", "#6B6B6B", "#33C3F2"];
 
   return (
     <>
@@ -21,11 +21,11 @@ export default async function Dashboard({ searchParams }: { searchParams: { mes?
       <div className="space-y-4 p-4 lg:p-5">
         {/* KPIs */}
         <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          <Kpi titulo="Faturamento total" valor={brl(a.faturamento)} variacao={d.var.faturamento} cor="#22C55E" Icone={ICifrao} />
-          <Kpi titulo="Total de despesas" valor={brl(a.despesas)} variacao={d.var.despesas} cor="#3B82F6" Icone={ICarteira} inverso />
-          <Kpi titulo="Lucro líquido" valor={brl(a.lucro)} variacao={d.var.lucro} cor="#22C55E" Icone={ITendencia} />
-          <Kpi titulo="Clientes ativos" valor={num(a.clientes)} variacao={d.var.clientes} cor="#8B5CF6" Icone={IPessoas} />
-          <Kpi titulo="Pedidos no período" valor={num(a.pedidos)} variacao={d.var.pedidos} cor="#FACC15" Icone={IPedido} />
+          <Kpi titulo="Faturamento total" valor={brl(a.faturamento)} variacao={d.var.faturamento} cor="#00AEEF" Icone={ICifrao} />
+          <Kpi titulo="Total de despesas" valor={brl(a.despesas)} variacao={d.var.despesas} cor="#EC008C" Icone={ICarteira} inverso />
+          <Kpi titulo="Lucro líquido" valor={brl(a.lucro)} variacao={d.var.lucro} cor="#00AEEF" Icone={ITendencia} />
+          <Kpi titulo="Clientes ativos" valor={num(a.clientes)} variacao={d.var.clientes} cor="#FFF200" Icone={IPessoas} />
+          <Kpi titulo="Pedidos no período" valor={num(a.pedidos)} variacao={d.var.pedidos} cor="#F5F5F5" Icone={IPedido} />
         </section>
 
         {/* Gráficos */}
@@ -33,7 +33,7 @@ export default async function Dashboard({ searchParams }: { searchParams: { mes?
           <div className="painel p-5">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <h2 className="titulo">Faturamento x Despesas</h2>
-              <Legenda itens={[["Faturamento", "#22C55E"], ["Despesas", "#3B82F6"]]} />
+              <Legenda itens={[["Faturamento", "#00AEEF"], ["Despesas", "#EC008C"]]} />
             </div>
             <BarrasFatDesp dados={d.serie} />
           </div>
@@ -114,11 +114,11 @@ export default async function Dashboard({ searchParams }: { searchParams: { mes?
           <div className="painel p-5">
             <h2 className="titulo mb-4">Resumo do Período</h2>
             <ul className="space-y-4">
-              <Resumo icone={<ISeta className="h-5 w-5" />} cor="#22C55E" rotulo="Faturamento" valor={brl(a.faturamento)} />
-              <Resumo icone={<ISeta baixo className="h-5 w-5" />} cor="#EF4444" rotulo="Despesas" valor={brl(a.despesas)} />
+              <Resumo icone={<ISeta className="h-5 w-5" />} cor="#00AEEF" rotulo="Faturamento" valor={brl(a.faturamento)} />
+              <Resumo icone={<ISeta baixo className="h-5 w-5" />} cor="#EC008C" rotulo="Despesas" valor={brl(a.despesas)} />
               <Resumo icone={<span className="text-lg font-bold">=</span>} cor="#8A9BB5" rotulo="Lucro líquido" valor={brl(a.lucro)} />
               <Resumo icone={<span className="text-lg font-bold">%</span>} cor="#8A9BB5" rotulo="Margem de lucro" valor={pct(d.margem)} />
-              <Resumo icone={<ICifrao className="h-5 w-5" />} cor="#FACC15" rotulo="A receber (total)" valor={brl(d.aReceber)} />
+              <Resumo icone={<ICifrao className="h-5 w-5" />} cor="#FFF200" rotulo="A receber (total)" valor={brl(d.aReceber)} />
             </ul>
           </div>
 
@@ -143,7 +143,7 @@ export default async function Dashboard({ searchParams }: { searchParams: { mes?
           <div className="painel p-5">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <h2 className="titulo">Faturamento vs. Lucro <span className="text-sm font-normal text-mute">(últimos 6 meses)</span></h2>
-              <Legenda itens={[["Faturamento", "#22C55E"], ["Despesas", "#3B82F6"], ["Lucro", "#FACC15"]]} />
+              <Legenda itens={[["Faturamento", "#00AEEF"], ["Despesas", "#EC008C"], ["Lucro", "#FFF200"]]} />
             </div>
             <Combinado dados={d.serie} />
           </div>

@@ -4,18 +4,22 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        bg: "#08111F",
-        panel: "#0E1A2E",
-        panel2: "#12213A",
-        line: "#1D2C47",
-        ink: "#E6EDF7",
-        mute: "#8A9BB5",
-        verde: "#22C55E",
-        azul: "#3B82F6",
-        amarelo: "#FACC15",
-        roxo: "#8B5CF6",
-        ciano: "#22D3EE",
-        vermelho: "#EF4444",
+        bg: "#0A0A0A",
+        panel: "#141414",
+        panel2: "#1C1C1C",
+        line: "#2C2C2C",
+        ink: "#FAFAFA",
+        mute: "#8C8C8C",
+        // CMYK da logo Érius — cada cor com um papel fixo
+        ciano: "#00AEEF",   // positivo / receita
+        magenta: "#EC008C", // alerta / crítico
+        amarelo: "#FFF200", // atenção / pendência
+        preto: "#1A1A1A",
+        // aliases usados nos gráficos e KPIs (mapeados pro CMYK)
+        verde: "#00AEEF",
+        azul: "#00AEEF",
+        roxo: "#EC008C",
+        vermelho: "#EC008C",
       },
       fontFamily: {
         display: ["Saira", "system-ui", "sans-serif"],

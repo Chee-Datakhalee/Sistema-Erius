@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root { color-scheme: dark; }
-html, body { background: #08111F; color: #E6EDF7; }
+html, body { background: #0A0A0A; color: #FAFAFA; }
 body { font-family: Barlow, system-ui, sans-serif; font-feature-settings: "tnum" 1; }
 
 @layer components {

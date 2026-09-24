@@ -28,6 +28,6 @@ export const LIMITES: Record<string, { amarelo: number; vermelho: number }> = {
   Outros: { amarelo: 0.1, vermelho: 0.2 },
 };
 
-export const CORES = ["#3B82F6", "#22C55E", "#FACC15", "#8B5CF6", "#22D3EE", "#F97316", "#94A3B8"];
+export const CORES = ["#00AEEF", "#EC008C", "#FFF200", "#F5F5F5", "#6B6B6B", "#33C3F2", "#F0339C"];
 
 export const FORMAS = ["Pix", "Dinheiro", "Cartão", "Boleto"] as const;
