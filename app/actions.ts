@@ -1,5 +1,6 @@
 "use server";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { db } from "@/lib/supabase";
 import { hoje, mesAtual, ultimoDia } from "@/lib/format";
 
@@ -245,8 +246,55 @@ export async function excluirOrcamento(fd: FormData) {
 /* ---------- Ordens de Serviço ---------- */
 type ItemOS = { servico: string; descricao: string; quantidade: number; valor_unitario: number; valor_total: number };
 
-export async function criarOS(fd: FormData) {
+type DadosOS = {
+  cliente: string; telefone: string | null; data: string; prazo_entrega: string | null;
+  forma: string; observacoes: string | null; pago: number; orcamento_id?: number | null; itens: ItemOS[];
+};
+
+// Cria a OS + o pedido em Clientes + o pagamento de entrada. Usado pela aba OS e pelo orçamento aprovado.
+async function gravarOS(d: DadosOS) {
   const s = db();
+  const total = Math.round(d.itens.reduce((t, i) => t + i.valor_total, 0) * 100) / 100;
+  const { data: os, error } = await s
+    .from("ordens_servico")
+    .insert({
+      cliente: d.cliente, telefone: d.telefone, data: d.data, prazo_entrega: d.prazo_entrega,
+      forma_pagto: d.forma, observacoes: d.observacoes, ...(d.orcamento_id ? { orcamento_id: d.orcamento_id } : {}),
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+
+  const numero = String(os.id).padStart(4, "0");
+  const principal = [...d.itens].sort((a, b) => b.valor_total - a.valor_total)[0];
+  const { data: ped, error: e2 } = await s
+    .from("pedidos")
+    .insert({
+      cliente: d.cliente,
+      servico: principal.servico,
+      descricao: `OS #${numero} · ${d.itens.map((i) => `${i.quantidade}x ${i.descricao}`).join(" + ")}`.slice(0, 300),
+      quantidade: d.itens.length === 1 ? d.itens[0].quantidade : 1,
+      data: d.data,
+      prioridade: false,
+      valor_base: total,
+      adicional_prioridade: 0,
+      forma_pagto: d.forma,
+      observacoes: d.orcamento_id ? `Do orçamento #${String(d.orcamento_id).padStart(4, "0")}` : d.observacoes,
+    })
+    .select("id")
+    .single();
+  if (e2) {
+    await s.from("ordens_servico").delete().eq("id", os.id);
+    throw new Error(e2.message);
+  }
+
+  await run(s.from("os_itens").insert(d.itens.map((i, ordem) => ({ ...i, os_id: os.id, ordem }))));
+  await run(s.from("ordens_servico").update({ pedido_id: ped.id }).eq("id", os.id));
+  if (d.pago > 0) await run(s.from("pagamentos").insert({ pedido_id: ped.id, data: d.data, valor: d.pago, forma: d.forma }));
+  return os.id as number;
+}
+
+export async function criarOS(fd: FormData) {
   const brutos = JSON.parse(String(fd.get("itens") ?? "[]")) as ItemOS[];
   const itens = brutos
     .filter((i) => String(i.descricao ?? "").trim())
@@ -256,50 +304,59 @@ export async function criarOS(fd: FormData) {
       return { servico: i.servico || "Outros", descricao: String(i.descricao).trim(), quantidade, valor_unitario, valor_total: Math.round(quantidade * valor_unitario * 100) / 100 };
     });
   if (!itens.length) throw new Error("Adicione ao menos um serviço com descrição.");
-
-  const total = itens.reduce((t, i) => t + i.valor_total, 0);
-  const cliente = txt(fd.get("cliente")) ?? "Sem nome";
-  const data = txt(fd.get("data")) ?? hoje();
-  const forma = txt(fd.get("forma_pagto")) ?? "Pix";
-  const observacoes = txt(fd.get("observacoes"));
-
-  const { data: os, error } = await s
-    .from("ordens_servico")
-    .insert({ cliente, telefone: txt(fd.get("telefone")), data, prazo_entrega: txt(fd.get("prazo_entrega")), forma_pagto: forma, observacoes })
-    .select("id")
-    .single();
-  if (error) throw new Error(error.message);
-
-  // A OS vira um pedido, então entra no faturamento, no dashboard e em "Quem falta pagar"
-  const numero = String(os.id).padStart(4, "0");
-  const principal = [...itens].sort((a, b) => b.valor_total - a.valor_total)[0];
-  const { data: ped, error: e2 } = await s
-    .from("pedidos")
-    .insert({
-      cliente,
-      servico: principal.servico,
-      descricao: `OS #${numero} · ${itens.map((i) => `${i.quantidade}x ${i.descricao}`).join(" + ")}`.slice(0, 300),
-      quantidade: itens.length === 1 ? itens[0].quantidade : 1,
-      data,
-      prioridade: false,
-      valor_base: total,
-      adicional_prioridade: 0,
-      forma_pagto: forma,
-      observacoes,
-    })
-    .select("id")
-    .single();
-  if (e2) {
-    await s.from("ordens_servico").delete().eq("id", os.id);
-    throw new Error(e2.message);
-  }
-
-  await run(s.from("os_itens").insert(itens.map((i, ordem) => ({ ...i, os_id: os.id, ordem }))));
-  await run(s.from("ordens_servico").update({ pedido_id: ped.id }).eq("id", os.id));
-
-  const pago = valor(fd.get("valor_pago"));
-  if (pago > 0) await run(s.from("pagamentos").insert({ pedido_id: ped.id, data, valor: pago, forma }));
+  await gravarOS({
+    cliente: txt(fd.get("cliente")) ?? "Sem nome",
+    telefone: txt(fd.get("telefone")),
+    data: txt(fd.get("data")) ?? hoje(),
+    prazo_entrega: txt(fd.get("prazo_entrega")),
+    forma: txt(fd.get("forma_pagto")) ?? "Pix",
+    observacoes: txt(fd.get("observacoes")),
+    pago: valor(fd.get("valor_pago")),
+    itens,
+  });
   tudo();
+}
+
+// Orçamento aprovado → vira OS (que cria o pedido em Clientes)
+export async function aprovarOrcamentoEmOS(fd: FormData) {
+  const s = db();
+  const id = Number(fd.get("id"));
+  const { data: orc, error: e1 } = await s.from("orcamentos").select("*").eq("id", id).single();
+  if (e1 || !orc) throw new Error(e1?.message ?? "Orçamento não encontrado.");
+  if (orc.status === "aprovado") redirect("/os");
+  const { data: its, error: e2 } = await s.from("orcamento_itens").select("*").eq("orcamento_id", id).order("ordem");
+  if (e2) throw new Error(e2.message);
+  if (!its?.length) throw new Error("Orçamento sem itens.");
+
+  const itens: ItemOS[] = its.map((it) => {
+    const desc =
+      it.tipo === "etiqueta"
+        ? `Etiqueta ${it.tamanho ?? ""}${it.descricao ? ` ${it.descricao}` : ""}`.trim()
+        : (it.descricao || it.servico);
+    return {
+      servico: it.servico || "Outros",
+      descricao: desc,
+      quantidade: Number(it.quantidade) || 1,
+      valor_unitario: Number(it.valor_unitario) || 0,
+      valor_total: Number(it.valor_total) || 0, // mantém o total exato do orçamento
+    };
+  });
+
+  await gravarOS({
+    cliente: orc.cliente,
+    telefone: txt(fd.get("telefone")),
+    data: hoje(),
+    prazo_entrega: txt(fd.get("prazo_entrega")),
+    forma: txt(fd.get("forma_pagto")) ?? "Pix",
+    observacoes: orc.observacoes ?? null,
+    pago: valor(fd.get("valor_pago")),
+    orcamento_id: id,
+    itens,
+  });
+  await run(s.from("orcamentos").update({ status: "aprovado" }).eq("id", id));
+  tudo();
+  revalidatePath("/orcamentos");
+  redirect("/os");
 }
 
 export async function statusOS(fd: FormData) {

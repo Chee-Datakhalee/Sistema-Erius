@@ -33,7 +33,7 @@ Aba própria para montar propostas comerciais:
 - Item "Etiqueta (tabela)": escolhe tamanho e quantidade, o preço sai automático pela tabela de Configurações (com interpolação, igual à calculadora).
 - Item "manual": para outros serviços (adesivação, placas), com preço digitado.
 - **Exportar PDF**: gera a proposta em `/orcamentos/[id]/pdf`, no layout A4 com a identidade CMYK da Érius (faixa ciano/magenta, bloco de itens, condições comerciais, rodapé com CNPJ).
-- **Aprovado**: cria os pedidos correspondentes automaticamente na aba Clientes e marca o orçamento como aprovado.
+- **Aprovado — gerar OS**: pede prazo, WhatsApp e se pagou 50%, cria a OS com os mesmos itens (que cria o pedido em Clientes) e marca o orçamento como aprovado.
 - **Recusar / lixeira**: marca como recusado ou exclui, sem criar pedido.
 
 ## Ordens de Serviço

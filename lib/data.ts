@@ -207,6 +207,7 @@ export type OSItem = {
 export type OS = {
   id: number; cliente: string; telefone: string | null; data: string; prazo_entrega: string | null;
   status: StatusOS; forma_pagto: string | null; observacoes: string | null; pedido_id: number | null;
+  orcamento_id?: number | null;
 };
 
 export async function carregarOS() {

@@ -1,5 +1,6 @@
 "use client";
-import { aprovarOrcamento, recusarOrcamento, excluirOrcamento } from "@/app/actions";
+import { recusarOrcamento, excluirOrcamento } from "@/app/actions";
+import AprovarOrcamento from "./AprovarOrcamento";
 import { useFormStatus } from "react-dom";
 
 const brl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v || 0);
@@ -20,7 +21,7 @@ function BotaoAcao({ children, className }: { children: React.ReactNode; classNa
   return <button type="submit" disabled={pending} className={`${className} disabled:opacity-50`}>{pending ? "..." : children}</button>;
 }
 
-export default function ListaOrcamentos({ orcamentos }: { orcamentos: Orc[] }) {
+export default function ListaOrcamentos({ orcamentos, hoje }: { orcamentos: Orc[]; hoje: string }) {
   if (!orcamentos.length) return <p className="text-sm text-mute">Nenhum orçamento ainda.</p>;
 
   return (
@@ -57,10 +58,7 @@ export default function ListaOrcamentos({ orcamentos }: { orcamentos: Orc[] }) {
               </a>
               {o.status === "pendente" && (
                 <>
-                  <form action={aprovarOrcamento}>
-                    <input type="hidden" name="id" value={o.id} />
-                    <BotaoAcao className="botao py-1.5 text-sm">Aprovado — criar pedido</BotaoAcao>
-                  </form>
+                  <AprovarOrcamento id={o.id} total={total} hoje={hoje} />
                   <form action={recusarOrcamento}>
                     <input type="hidden" name="id" value={o.id} />
                     <BotaoAcao className="botao2 py-1.5 text-sm text-magenta">Recusar</BotaoAcao>

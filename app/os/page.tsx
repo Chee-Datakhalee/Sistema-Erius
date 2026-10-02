@@ -126,6 +126,7 @@ function CartaoOS({ o, hj }: { o: Linha; hj: string }) {
           <div className="mt-1 text-xs text-mute">
             Aberta em {dataBR(o.data)} · <span className={prazo.cls}>{prazo.texto}</span>
             {o.telefone && ` · ${o.telefone}`}
+            {o.orcamento_id && ` · do orçamento #${String(o.orcamento_id).padStart(4, "0")}`}
           </div>
           <ul className="mt-2 space-y-0.5 text-sm text-ink/80">
             {o.itens.map((it) => (

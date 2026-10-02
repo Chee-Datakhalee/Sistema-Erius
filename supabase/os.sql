@@ -28,3 +28,6 @@ create table if not exists os_itens (
 
 alter table ordens_servico enable row level security;
 alter table os_itens enable row level security;
+
+-- Ligação Orçamento → OS (pode rodar de novo sem problema)
+alter table ordens_servico add column if not exists orcamento_id bigint references orcamentos(id) on delete set null;
