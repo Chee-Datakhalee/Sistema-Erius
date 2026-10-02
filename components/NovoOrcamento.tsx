@@ -1,7 +1,7 @@
 "use client";
 import { useRef, useState } from "react";
 import { criarOrcamento } from "@/app/actions";
-import { precoEtiqueta, type PrecoTabela } from "@/lib/precos";
+import { precoSugerido, lerMedida, type PrecoTabela } from "@/lib/precos";
 import { SERVICOS } from "@/lib/constants";
 
 const brl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v || 0);
@@ -14,7 +14,20 @@ type Item = {
   descricao: string | null;
   valor_unitario: number;
   valor_total: number;
+  outra?: boolean;       // medida fora da tabela (ex: 5x3)
+  medidaTxt?: string;    // o que foi digitado na medida livre
+  sugerido?: number;     // preço total sugerido pela tabela
+  manualTxt?: string;    // preço total digitado por você (vazio = usa o sugerido)
+  qtdTxt?: string;
 };
+const parseBR = (s: string) => {
+  let t = String(s ?? "").trim().replace(/[R$\s]/g, "");
+  if (!t) return 0;
+  if (t.includes(",")) t = t.replace(/\./g, "").replace(",", ".");
+  const x = Number(t);
+  return isFinite(x) ? x : 0;
+};
+const r2 = (v: number) => Math.round(v * 100) / 100;
 
 export default function NovoOrcamento({ precos }: { precos: PrecoTabela[] }) {
   const tamanhos = [...new Set(precos.map((p) => p.tamanho))].sort((a, b) => parseFloat(a) - parseFloat(b));
@@ -26,11 +39,12 @@ export default function NovoOrcamento({ precos }: { precos: PrecoTabela[] }) {
 
   function addEtiqueta() {
     const tamanho = tamanhos[0] ?? "5x5";
-    const quantidade = 200;
-    const totalCalc = precoEtiqueta(precos, tamanho, quantidade);
+    const quantidade = 100;
+    const sug = r2(precoSugerido(precos, tamanho, quantidade));
     setItens((v) => [...v, {
       tipo: "etiqueta", servico: "Etiquetas", tamanho, quantidade, descricao: null,
-      valor_unitario: quantidade ? totalCalc / quantidade : 0, valor_total: totalCalc,
+      valor_unitario: quantidade ? sug / quantidade : 0, valor_total: sug,
+      outra: false, medidaTxt: "", sugerido: sug, manualTxt: "", qtdTxt: String(quantidade),
     }]);
   }
   function addManual() {
@@ -42,15 +56,21 @@ export default function NovoOrcamento({ precos }: { precos: PrecoTabela[] }) {
   function atualizar(i: number, patch: Partial<Item>) {
     setItens((v) => {
       const novo = [...v];
-      novo[i] = { ...novo[i], ...patch };
-      const it = novo[i];
-      if (it.tipo === "etiqueta" && it.tamanho) {
-        const unit = precoEtiqueta(precos, it.tamanho, it.quantidade);
-        it.valor_unitario = it.quantidade ? unit / it.quantidade : 0;
-        it.valor_total = unit;
+      const it = { ...novo[i], ...patch };
+      if (it.tipo === "etiqueta") {
+        if (patch.qtdTxt !== undefined) it.quantidade = Math.max(0, Math.round(parseBR(patch.qtdTxt)));
+        if (it.outra) {
+          const med = lerMedida(it.medidaTxt ?? "");
+          it.tamanho = med ? med.texto : (it.medidaTxt ?? "").trim() || null;
+        }
+        it.sugerido = it.tamanho ? r2(precoSugerido(precos, it.tamanho, it.quantidade)) : 0;
+        const manual = (it.manualTxt ?? "").trim() ? parseBR(it.manualTxt!) : null;
+        it.valor_total = r2(manual ?? it.sugerido);
+        it.valor_unitario = it.quantidade ? it.valor_total / it.quantidade : 0;
       } else if (it.tipo === "manual") {
         it.valor_total = it.valor_unitario * (it.quantidade || 1);
       }
+      novo[i] = it;
       return novo;
     });
   }
@@ -60,6 +80,8 @@ export default function NovoOrcamento({ precos }: { precos: PrecoTabela[] }) {
   async function salvar() {
     if (!cliente.trim()) return setErro("Informe o cliente.");
     if (!itens.length) return setErro("Adicione ao menos um item.");
+    if (itens.some((i) => i.tipo === "etiqueta" && (!i.tamanho || !lerMedida(i.tamanho)))) return setErro("Informe a medida da etiqueta (ex: 5x3).");
+    if (itens.some((i) => i.tipo === "etiqueta" && !i.quantidade)) return setErro("Informe a quantidade da etiqueta.");
     setErro("");
     setSalvando(true);
     const fd = new FormData(formRef.current!);
@@ -134,19 +156,57 @@ export default function NovoOrcamento({ precos }: { precos: PrecoTabela[] }) {
               <li key={i} className="grid grid-cols-2 gap-2 p-3 md:grid-cols-6">
                 {it.tipo === "etiqueta" ? (
                   <>
-                    <div className="col-span-2 md:col-span-1">
-                      <label className="rotulo">Tamanho</label>
-                      <select className="campo" value={it.tamanho ?? ""} onChange={(e) => atualizar(i, { tamanho: e.target.value })}>
+                    <div>
+                      <label className="rotulo">Medida</label>
+                      <select
+                        className="campo"
+                        value={it.outra ? "__outra" : it.tamanho ?? ""}
+                        onChange={(e) =>
+                          e.target.value === "__outra"
+                            ? atualizar(i, { outra: true, medidaTxt: "" })
+                            : atualizar(i, { outra: false, tamanho: e.target.value })
+                        }
+                      >
                         {tamanhos.map((t) => <option key={t} value={t}>{t} cm</option>)}
+                        <option value="__outra">Outra medida…</option>
                       </select>
+                      {it.outra && (
+                        <input
+                          className="campo mt-1.5"
+                          autoFocus
+                          value={it.medidaTxt ?? ""}
+                          onChange={(e) => atualizar(i, { medidaTxt: e.target.value })}
+                          placeholder="Ex: 5x3"
+                        />
+                      )}
                     </div>
                     <div>
                       <label className="rotulo">Quantidade</label>
-                      <input className="campo" inputMode="numeric" value={it.quantidade} onChange={(e) => atualizar(i, { quantidade: Number(e.target.value) || 0 })} />
+                      <input className="campo" inputMode="numeric" value={it.qtdTxt ?? String(it.quantidade)} onChange={(e) => atualizar(i, { qtdTxt: e.target.value })} />
                     </div>
                     <div className="col-span-2">
                       <label className="rotulo">Descrição (opcional)</label>
                       <input className="campo" value={it.descricao ?? ""} onChange={(e) => atualizar(i, { descricao: e.target.value })} placeholder="Ex: colorida, fosco" />
+                    </div>
+                    <div>
+                      <label className="rotulo">Seu preço total (R$)</label>
+                      <input
+                        className="campo"
+                        inputMode="decimal"
+                        value={it.manualTxt ?? ""}
+                        onChange={(e) => atualizar(i, { manualTxt: e.target.value })}
+                        placeholder={(it.sugerido ?? 0).toFixed(2).replace(".", ",")}
+                      />
+                      <div className="mt-1 text-[11px] text-mute">
+                        {it.sugerido ? (
+                          <>
+                            Sugerido{it.outra ? " (estimado pela área)" : ""}: {brl(it.sugerido)}
+                            {(it.manualTxt ?? "").trim() && (
+                              <button type="button" onClick={() => atualizar(i, { manualTxt: "" })} className="ml-1 text-ciano underline">usar</button>
+                            )}
+                          </>
+                        ) : it.outra ? "Digite a medida (ex: 5x3)" : "Sem preço na tabela"}
+                      </div>
                     </div>
                   </>
                 ) : (
@@ -181,7 +241,12 @@ export default function NovoOrcamento({ precos }: { precos: PrecoTabela[] }) {
                   </>
                 )}
                 <div className="flex items-end justify-between gap-2">
-                  <span className="font-display font-semibold text-ciano">{brl(it.valor_total)}</span>
+                  <span className="font-display font-semibold text-ciano">
+                    {brl(it.valor_total)}
+                    {it.tipo === "etiqueta" && it.quantidade > 0 && (
+                      <span className="block text-[11px] font-normal text-mute">{brl(it.valor_unitario)}/un</span>
+                    )}
+                  </span>
                   <button type="button" onClick={() => remover(i)} className="rounded p-1.5 text-mute hover:bg-magenta/15 hover:text-magenta" aria-label="Remover item">
                     <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /></svg>
                   </button>
