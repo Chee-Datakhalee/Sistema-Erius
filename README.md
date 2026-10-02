@@ -35,3 +35,12 @@ Aba própria para montar propostas comerciais:
 - **Exportar PDF**: gera a proposta em `/orcamentos/[id]/pdf`, no layout A4 com a identidade CMYK da Érius (faixa ciano/magenta, bloco de itens, condições comerciais, rodapé com CNPJ).
 - **Aprovado**: cria os pedidos correspondentes automaticamente na aba Clientes e marca o orçamento como aprovado.
 - **Recusar / lixeira**: marca como recusado ou exclui, sem criar pedido.
+
+## Ordens de Serviço
+Aba `/os` para controlar a produção:
+- Cliente, WhatsApp, data, **prazo de entrega** e serviços discriminados (descrição, quantidade, valor unitário).
+- **"Cliente pagou 50%?"**: no Sim, o valor pago já vem com a metade do total; dá pra alterar se pagou a mais ou a menos. O sistema mostra o que falta pagar.
+- A OS cria um pedido automaticamente, então entra no faturamento, no dashboard e em "Quem falta pagar".
+- Status: Aberta → Em produção → Pronta → Entregue. Alerta de atrasada / entrega hoje / amanhã.
+- Botões: Receber o saldo, WhatsApp (mensagem pronta) e Imprimir OS (PDF com assinatura).
+- Banco: rode `supabase/os.sql` no SQL Editor (só uma vez).

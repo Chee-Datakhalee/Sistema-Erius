@@ -198,3 +198,28 @@ export async function carregarOrcamentos() {
   });
   return orcs.map((o) => ({ ...o, itens: itensPorOrc.get(o.id) ?? [] }));
 }
+
+export type StatusOS = "aberta" | "producao" | "pronta" | "entregue";
+export type OSItem = {
+  id: number; os_id: number; servico: string; descricao: string;
+  quantidade: number; valor_unitario: number; valor_total: number; ordem: number;
+};
+export type OS = {
+  id: number; cliente: string; telefone: string | null; data: string; prazo_entrega: string | null;
+  status: StatusOS; forma_pagto: string | null; observacoes: string | null; pedido_id: number | null;
+};
+
+export async function carregarOS() {
+  const s = db();
+  const [ordens, itensRaw] = await Promise.all([
+    q<OS>(s.from("ordens_servico").select("*").order("data", { ascending: false }).order("id", { ascending: false })),
+    q<OSItem>(s.from("os_itens").select("*").order("ordem")),
+  ]);
+  itensRaw.forEach((i) => { i.valor_unitario = n(i.valor_unitario); i.valor_total = n(i.valor_total); });
+  const porOS = new Map<number, OSItem[]>();
+  itensRaw.forEach((i) => {
+    if (!porOS.has(i.os_id)) porOS.set(i.os_id, []);
+    porOS.get(i.os_id)!.push(i);
+  });
+  return ordens.map((o) => ({ ...o, itens: porOS.get(o.id) ?? [] }));
+}

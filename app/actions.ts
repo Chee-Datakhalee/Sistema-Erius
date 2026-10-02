@@ -19,7 +19,7 @@ async function run(p: PromiseLike<{ error: { message: string } | null }>) {
   if (error) throw new Error(error.message);
 }
 function tudo() {
-  ["/", "/clientes", "/gastos", "/fluxo", "/faturamento", "/config"].forEach((p) => revalidatePath(p));
+  ["/", "/clientes", "/os", "/gastos", "/fluxo", "/faturamento", "/config"].forEach((p) => revalidatePath(p));
 }
 
 /* ---------- Pedidos ---------- */
@@ -240,4 +240,81 @@ export async function recusarOrcamento(fd: FormData) {
 export async function excluirOrcamento(fd: FormData) {
   await run(db().from("orcamentos").delete().eq("id", Number(fd.get("id"))));
   revalidatePath("/orcamentos");
+}
+
+/* ---------- Ordens de Serviço ---------- */
+type ItemOS = { servico: string; descricao: string; quantidade: number; valor_unitario: number; valor_total: number };
+
+export async function criarOS(fd: FormData) {
+  const s = db();
+  const brutos = JSON.parse(String(fd.get("itens") ?? "[]")) as ItemOS[];
+  const itens = brutos
+    .filter((i) => String(i.descricao ?? "").trim())
+    .map((i) => {
+      const quantidade = Math.max(1, Math.round(Number(i.quantidade) || 1));
+      const valor_unitario = Number(i.valor_unitario) || 0;
+      return { servico: i.servico || "Outros", descricao: String(i.descricao).trim(), quantidade, valor_unitario, valor_total: Math.round(quantidade * valor_unitario * 100) / 100 };
+    });
+  if (!itens.length) throw new Error("Adicione ao menos um serviço com descrição.");
+
+  const total = itens.reduce((t, i) => t + i.valor_total, 0);
+  const cliente = txt(fd.get("cliente")) ?? "Sem nome";
+  const data = txt(fd.get("data")) ?? hoje();
+  const forma = txt(fd.get("forma_pagto")) ?? "Pix";
+  const observacoes = txt(fd.get("observacoes"));
+
+  const { data: os, error } = await s
+    .from("ordens_servico")
+    .insert({ cliente, telefone: txt(fd.get("telefone")), data, prazo_entrega: txt(fd.get("prazo_entrega")), forma_pagto: forma, observacoes })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+
+  // A OS vira um pedido, então entra no faturamento, no dashboard e em "Quem falta pagar"
+  const numero = String(os.id).padStart(4, "0");
+  const principal = [...itens].sort((a, b) => b.valor_total - a.valor_total)[0];
+  const { data: ped, error: e2 } = await s
+    .from("pedidos")
+    .insert({
+      cliente,
+      servico: principal.servico,
+      descricao: `OS #${numero} · ${itens.map((i) => `${i.quantidade}x ${i.descricao}`).join(" + ")}`.slice(0, 300),
+      quantidade: itens.length === 1 ? itens[0].quantidade : 1,
+      data,
+      prioridade: false,
+      valor_base: total,
+      adicional_prioridade: 0,
+      forma_pagto: forma,
+      observacoes,
+    })
+    .select("id")
+    .single();
+  if (e2) {
+    await s.from("ordens_servico").delete().eq("id", os.id);
+    throw new Error(e2.message);
+  }
+
+  await run(s.from("os_itens").insert(itens.map((i, ordem) => ({ ...i, os_id: os.id, ordem }))));
+  await run(s.from("ordens_servico").update({ pedido_id: ped.id }).eq("id", os.id));
+
+  const pago = valor(fd.get("valor_pago"));
+  if (pago > 0) await run(s.from("pagamentos").insert({ pedido_id: ped.id, data, valor: pago, forma }));
+  tudo();
+}
+
+export async function statusOS(fd: FormData) {
+  const st = String(fd.get("status"));
+  if (!["aberta", "producao", "pronta", "entregue"].includes(st)) return;
+  await run(db().from("ordens_servico").update({ status: st }).eq("id", Number(fd.get("id"))));
+  revalidatePath("/os");
+}
+
+export async function excluirOS(fd: FormData) {
+  const s = db();
+  const id = Number(fd.get("id"));
+  const { data: os } = await s.from("ordens_servico").select("pedido_id").eq("id", id).single();
+  // apaga o pedido junto (e os pagamentos dele), pra não sobrar cobrança fantasma
+  if (os?.pedido_id) await run(s.from("pedidos").delete().eq("id", os.pedido_id));
+  await run(s.from("ordens_servico").delete().eq("id", id));
+  tudo();
 }

@@ -2,13 +2,14 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import Logo from "./Logo";
-import { ICasa, ICarteira, IEtiqueta, IPessoas, IGrafico, IEngrenagem, IPedido } from "./Icones";
+import { ICasa, ICarteira, IEtiqueta, IPessoas, IGrafico, IEngrenagem, IPedido, IOS } from "./Icones";
 
 const itens = [
   { href: "/", nome: "Dashboard", I: ICasa },
   { href: "/fluxo", nome: "Fluxo de Caixa", I: ICarteira },
   { href: "/gastos", nome: "Gastos", I: IEtiqueta },
   { href: "/clientes", nome: "Clientes", I: IPessoas },
+  { href: "/os", nome: "Ordens de Serviço", I: IOS },
   { href: "/orcamentos", nome: "Orçamentos", I: IPedido },
   { href: "/faturamento", nome: "Faturamento e Lucro", I: IGrafico },
   { href: "/config", nome: "Configurações", I: IEngrenagem },
