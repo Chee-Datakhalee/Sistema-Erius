@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "./supabase";
 import { mesDe, somaMes, mesCurto } from "./format";
-import { LIMITES } from "./constants";
+import { LIMITES, NAO_DESPESA } from "./constants";
 
 export type Pedido = {
   id: number; cliente: string; servico: string; descricao: string | null; quantidade: number;
@@ -14,7 +14,7 @@ export type Gasto = {
   parcela_total: number | null; valor: number; observacoes: string | null;
 };
 export type Fixa = { id: number; nome: string; categoria: string; valor: number; ativo: boolean };
-export type Config = { caixa_inicial: number; adicional_prioridade: number; markup_revenda: number };
+export type Config = { caixa_inicial: number; adicional_prioridade: number; markup_revenda: number; das_mensal: number; assessor_inicio: string };
 export type Preco = { tamanho: string; quantidade: number; preco: number };
 
 const n = (v: unknown) => Number(v ?? 0);
@@ -39,8 +39,11 @@ export async function carregar() {
   gastos.forEach((g) => (g.valor = n(g.valor)));
   fixas.forEach((f) => (f.valor = n(f.valor)));
   const config: Config = cfg[0]
-    ? { caixa_inicial: n(cfg[0].caixa_inicial), adicional_prioridade: n(cfg[0].adicional_prioridade), markup_revenda: n(cfg[0].markup_revenda) }
-    : { caixa_inicial: 0, adicional_prioridade: 35, markup_revenda: 30 };
+    ? {
+        caixa_inicial: n(cfg[0].caixa_inicial), adicional_prioridade: n(cfg[0].adicional_prioridade), markup_revenda: n(cfg[0].markup_revenda),
+        das_mensal: n(cfg[0].das_mensal), assessor_inicio: cfg[0].assessor_inicio ?? "2026-10-01",
+      }
+    : { caixa_inicial: 0, adicional_prioridade: 35, markup_revenda: 30, das_mensal: 0, assessor_inicio: "2026-10-01" };
   return { pedidos, pagamentos, gastos, fixas, config };
 }
 
@@ -60,7 +63,9 @@ export function statusPedido(total: number, pago: number) {
 
 function resumoMes(b: Base, mes: string) {
   const ped = b.pedidos.filter((p) => mesDe(p.data) === mes);
-  const gas = b.gastos.filter((g) => mesDe(g.data) === mes);
+  const gasTodos = b.gastos.filter((g) => mesDe(g.data) === mes);
+  const gas = gasTodos.filter((g) => !NAO_DESPESA.includes(g.categoria));
+  const retiradas = gasTodos.filter((g) => NAO_DESPESA.includes(g.categoria)).reduce((s, g) => s + g.valor, 0);
   const pag = b.pagamentos.filter((p) => mesDe(p.data) === mes);
   const faturamento = ped.reduce((s, p) => s + p.valor_total, 0);
   const despesas = gas.reduce((s, g) => s + g.valor, 0);
@@ -68,7 +73,7 @@ function resumoMes(b: Base, mes: string) {
   return {
     mes, ped, gas, faturamento, despesas, recebido,
     lucro: faturamento - despesas,
-    saldoCaixa: recebido - despesas,
+    saldoCaixa: recebido - despesas - retiradas,
     pedidos: ped.length,
     clientes: new Set(ped.map((p) => p.cliente.trim().toLowerCase())).size,
   };

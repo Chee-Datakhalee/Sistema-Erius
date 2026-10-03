@@ -1,3 +1,4 @@
+import { NAO_DESPESA } from "@/lib/constants";
 import Cabecalho from "@/components/Cabecalho";
 import { Combinado } from "@/components/Graficos";
 import { carregar } from "@/lib/data";
@@ -15,7 +16,7 @@ export default async function Faturamento() {
 
   const linhas = meses.map((m) => {
     const fat = b.pedidos.filter((p) => mesDe(p.data) === m).reduce((s, p) => s + p.valor_total, 0);
-    const desp = b.gastos.filter((g) => mesDe(g.data) === m).reduce((s, g) => s + g.valor, 0);
+    const desp = b.gastos.filter((g) => mesDe(g.data) === m && !NAO_DESPESA.includes(g.categoria)).reduce((s, g) => s + g.valor, 0);
     const rec = b.pagamentos.filter((p) => mesDe(p.data) === m).reduce((s, p) => s + p.valor, 0);
     return { m, fat, desp, rec, lucro: fat - desp, margem: fat ? (fat - desp) / fat : 0 };
   });

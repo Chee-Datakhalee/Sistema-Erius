@@ -44,3 +44,12 @@ Aba `/os` para controlar a produção:
 - Status: Aberta → Em produção → Pronta → Entregue. Alerta de atrasada / entrega hoje / amanhã.
 - Botões: Receber o saldo, WhatsApp (mensagem pronta) e Imprimir OS (PDF com assinatura).
 - Banco: rode `supabase/os.sql` no SQL Editor (só uma vez).
+
+## Meu Assessor
+Aba `/assessor`: divide o dinheiro **recebido** (não o vendido) em envelopes — Tráfego 40%, Bobina 25%, Pró-labore 25%, Tinta 10% (editável em Configurações).
+- Gastos de cada categoria saem do envelope correspondente; o saldo acumula de um mês pro outro.
+- Bobina/Tinta: aviso "já dá pra repor" pela média das últimas 3 compras.
+- Tráfego: retorno (vendas ÷ gasto em anúncios).
+- Pró-labore: botão de retirada (categoria Pró-labore — sai do caixa, mas não conta como despesa no lucro).
+- DAS opcional: separado antes da divisão.
+- Banco: rode `supabase/assessor.sql` (só cria coisas novas).

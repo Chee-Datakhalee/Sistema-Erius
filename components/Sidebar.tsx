@@ -2,10 +2,11 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import Logo from "./Logo";
-import { ICasa, ICarteira, IEtiqueta, IPessoas, IGrafico, IEngrenagem, IPedido, IOS } from "./Icones";
+import { ICasa, ICarteira, IEtiqueta, IPessoas, IGrafico, IEngrenagem, IPedido, IOS, IAssessor } from "./Icones";
 
 const itens = [
   { href: "/", nome: "Dashboard", I: ICasa },
+  { href: "/assessor", nome: "Meu Assessor", I: IAssessor },
   { href: "/fluxo", nome: "Fluxo de Caixa", I: ICarteira },
   { href: "/gastos", nome: "Gastos", I: IEtiqueta },
   { href: "/clientes", nome: "Clientes", I: IPessoas },

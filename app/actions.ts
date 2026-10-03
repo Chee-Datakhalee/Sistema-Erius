@@ -20,7 +20,7 @@ async function run(p: PromiseLike<{ error: { message: string } | null }>) {
   if (error) throw new Error(error.message);
 }
 function tudo() {
-  ["/", "/clientes", "/os", "/gastos", "/fluxo", "/faturamento", "/config"].forEach((p) => revalidatePath(p));
+  ["/", "/assessor", "/clientes", "/os", "/gastos", "/fluxo", "/faturamento", "/config"].forEach((p) => revalidatePath(p));
 }
 
 /* ---------- Pedidos ---------- */
@@ -373,5 +373,35 @@ export async function excluirOS(fd: FormData) {
   // apaga o pedido junto (e os pagamentos dele), pra não sobrar cobrança fantasma
   if (os?.pedido_id) await run(s.from("pedidos").delete().eq("id", os.pedido_id));
   await run(s.from("ordens_servico").delete().eq("id", id));
+  tudo();
+}
+
+/* ---------- Meu Assessor ---------- */
+export async function salvarAssessor(fd: FormData) {
+  const s = db();
+  const ids = fd.getAll("env_id").map(Number);
+  for (const id of ids) {
+    await run(s.from("envelopes").update({ pct: valor(fd.get(`pct_${id}`)) }).eq("id", id));
+  }
+  await run(
+    s.from("config").update({
+      das_mensal: valor(fd.get("das_mensal")),
+      assessor_inicio: txt(fd.get("assessor_inicio")) ?? "2026-10-01",
+    }).eq("id", 1)
+  );
+  tudo();
+}
+
+export async function retirarProlabore(fd: FormData) {
+  const v = valor(fd.get("valor"));
+  if (v <= 0) return;
+  await run(
+    db().from("gastos").insert({
+      data: txt(fd.get("data")) ?? hoje(),
+      descricao: "Retirada de pró-labore",
+      categoria: "Pró-labore",
+      valor: v,
+    })
+  );
   tudo();
 }

@@ -4,14 +4,16 @@ import Enviar from "@/components/Enviar";
 import FormReset from "@/components/FormReset";
 import Calculadora from "@/components/Calculadora";
 import { carregar, carregarPrecos } from "@/lib/data";
+import { carregarEnvelopes } from "@/lib/assessor";
 import { brl } from "@/lib/format";
 import { CATEGORIAS_GASTO } from "@/lib/constants";
-import { salvarConfig, criarFixa, alternarFixa, excluirFixa, salvarPreco } from "../actions";
+import { salvarConfig, criarFixa, alternarFixa, excluirFixa, salvarPreco, salvarAssessor } from "../actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function Config() {
-  const [b, precos] = await Promise.all([carregar(), carregarPrecos()]);
+  const [b, precos, envelopes] = await Promise.all([carregar(), carregarPrecos(), carregarEnvelopes()]);
+  const somaPct = (envelopes ?? []).reduce((t, e) => t + e.pct, 0);
   const c = b.config;
   const tamanhos = [...new Set(precos.map((p) => p.tamanho))].sort((x, y) => parseFloat(x) - parseFloat(y));
   const qtds = [...new Set(precos.map((p) => p.quantidade))].sort((x, y) => x - y);
@@ -70,6 +72,41 @@ export default async function Config() {
             </FormReset>
           </section>
         </div>
+
+        <section className="painel p-5">
+          <h2 className="titulo mb-1">Meu Assessor</h2>
+          <p className="mb-4 text-xs text-mute">Quanto de cada real recebido vai para cada envelope.</p>
+          {envelopes ? (
+            <form action={salvarAssessor} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                {envelopes.map((e) => (
+                  <div key={e.id}>
+                    <input type="hidden" name="env_id" value={e.id} />
+                    <label className="rotulo" htmlFor={`pct_${e.id}`}>{e.nome} (%)</label>
+                    <input id={`pct_${e.id}`} name={`pct_${e.id}`} defaultValue={fmt(e.pct)} inputMode="decimal" className="campo" />
+                    <div className="mt-1 text-[11px] text-mute">sai de "{e.categoria}"</div>
+                  </div>
+                ))}
+              </div>
+              <p className={`text-sm ${Math.abs(somaPct - 100) > 0.01 ? "text-magenta" : "text-mute"}`}>
+                Soma atual: {somaPct.toLocaleString("pt-BR")}%{Math.abs(somaPct - 100) > 0.01 ? " · precisa fechar 100%" : ""}
+              </p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div>
+                  <label className="rotulo" htmlFor="das_mensal">Imposto DAS mensal (R$) · 0 = desligado</label>
+                  <input id="das_mensal" name="das_mensal" defaultValue={fmt(c.das_mensal)} inputMode="decimal" className="campo" />
+                </div>
+                <div>
+                  <label className="rotulo" htmlFor="assessor_inicio">Começar a contar em</label>
+                  <input id="assessor_inicio" name="assessor_inicio" type="date" defaultValue={c.assessor_inicio} className="campo" />
+                </div>
+                <div className="flex items-end"><Enviar>Salvar assessor</Enviar></div>
+              </div>
+            </form>
+          ) : (
+            <p className="text-sm text-mute">Rode o arquivo supabase/assessor.sql no Supabase para ativar.</p>
+          )}
+        </section>
 
         <section className="painel p-5">
           <h2 className="titulo mb-4">Calculadora de preço</h2>
