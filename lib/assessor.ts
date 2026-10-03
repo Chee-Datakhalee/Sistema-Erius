@@ -62,6 +62,10 @@ export function montarAssessor(b: Base, envelopes: Envelope[], mes: string) {
       entrouMes: (distribuivelMes * e.pct) / 100,
       gastoMes: gastoCat(e.categoria, true),
       reposicao: reposicao(e.categoria),
+      ultimas: gastosPeriodo
+        .filter((g) => g.categoria === e.categoria)
+        .sort((x, y) => y.data.localeCompare(x.data) || y.id - x.id)
+        .slice(0, 4),
     };
   });
 

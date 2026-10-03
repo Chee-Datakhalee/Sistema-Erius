@@ -392,14 +392,16 @@ export async function salvarAssessor(fd: FormData) {
   tudo();
 }
 
-export async function retirarProlabore(fd: FormData) {
+export async function retirarEnvelope(fd: FormData) {
   const v = valor(fd.get("valor"));
-  if (v <= 0) return;
+  const categoria = txt(fd.get("categoria"));
+  if (v <= 0 || !categoria) return;
+  const nome = txt(fd.get("nome")) ?? categoria;
   await run(
     db().from("gastos").insert({
       data: txt(fd.get("data")) ?? hoje(),
-      descricao: "Retirada de pró-labore",
-      categoria: "Pró-labore",
+      descricao: txt(fd.get("descricao")) ?? (categoria === "Pró-labore" ? "Retirada de pró-labore" : `Retirada do envelope ${nome}`),
+      categoria,
       valor: v,
     })
   );

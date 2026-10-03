@@ -5,7 +5,8 @@ import { ICheck, IAlerta, ILampada } from "@/components/Icones";
 import { carregar } from "@/lib/data";
 import { carregarEnvelopes, montarAssessor } from "@/lib/assessor";
 import { brl, dataBR, hoje, mesAtual, mesLongo } from "@/lib/format";
-import { retirarProlabore } from "../actions";
+import { retirarEnvelope, excluirGasto } from "../actions";
+import Excluir from "@/components/Excluir";
 
 export const dynamic = "force-dynamic";
 
@@ -82,7 +83,7 @@ export default async function Assessor({ searchParams }: { searchParams: { mes?:
                 </div>
                 <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
                   <div className="text-mute">Entrou <span className="text-ink">{brl(e.entrou)}</span></div>
-                  <div className="text-right text-mute">Gasto <span className="text-ink">{brl(e.gasto)}</span></div>
+                  <div className="text-right text-mute">Retirado <span className="text-ink">{brl(e.gasto)}</span></div>
                   <div className="text-xs text-mute">este mês +{brl(e.entrouMes)}</div>
                   <div className="text-right text-xs text-mute">este mês −{brl(e.gastoMes)}</div>
                 </div>
@@ -116,12 +117,27 @@ export default async function Assessor({ searchParams }: { searchParams: { mes?:
                     )
                   )}
 
-                  {e.categoria === "Pró-labore" && (
-                    <FormReset action={retirarProlabore} className="flex flex-wrap items-center gap-2 pt-1">
-                      <input name="valor" inputMode="decimal" defaultValue={e.saldo > 0 ? e.saldo.toFixed(2).replace(".", ",") : ""} placeholder="R$" className="campo w-28 py-1.5 text-sm" aria-label="Valor da retirada" />
-                      <input name="data" type="date" defaultValue={hj} className="campo w-[140px] py-1.5 text-sm" aria-label="Data" />
-                      <Enviar className="botao py-1.5 text-sm">Retirar pró-labore</Enviar>
-                    </FormReset>
+                  <FormReset action={retirarEnvelope} className="flex flex-wrap items-center gap-2 pt-1">
+                    <input type="hidden" name="categoria" value={e.categoria} />
+                    <input type="hidden" name="nome" value={e.nome} />
+                    <input name="valor" required inputMode="decimal" placeholder="R$" className="campo w-24 py-1.5 text-sm" aria-label={`Valor retirado de ${e.nome}`} />
+                    <input name="descricao" placeholder={e.categoria === "Pró-labore" ? "Retirada de pró-labore" : `Ex: compra de ${e.nome.toLowerCase()}`} className="campo min-w-[120px] flex-1 py-1.5 text-sm" aria-label="Descrição" />
+                    <input name="data" type="date" defaultValue={hj} className="campo w-[140px] py-1.5 text-sm" aria-label="Data" />
+                    <Enviar className="botao py-1.5 text-sm">Retirar</Enviar>
+                  </FormReset>
+
+                  {e.ultimas.length > 0 && (
+                    <ul className="space-y-1 pt-2 text-xs">
+                      {e.ultimas.map((g) => (
+                        <li key={g.id} className="flex items-center justify-between gap-2 text-mute">
+                          <span className="min-w-0 truncate">{dataBR(g.data)} · {g.descricao}</span>
+                          <span className="flex items-center gap-1 text-ink">
+                            −{brl(g.valor)}
+                            <Excluir action={excluirGasto} id={g.id} texto={`Excluir a retirada de ${brl(g.valor)}? O valor volta para o envelope.`} />
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
                   )}
                 </div>
               </section>
