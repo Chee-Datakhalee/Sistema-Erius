@@ -3,6 +3,8 @@ import Kpi from "@/components/Kpi";
 import { BarrasFatDesp, LinhaCaixa, Rosca, Combinado } from "@/components/Graficos";
 import { ICifrao, ICarteira, ITendencia, IPessoas, IPedido, ISeta, ICheck, IAlerta, ILampada, ICasa } from "@/components/Icones";
 import { carregar, montarDashboard } from "@/lib/data";
+import { carregarEnvelopes } from "@/lib/assessor";
+import { mesDe } from "@/lib/format";
 import { brl, pct, mesAtual, num } from "@/lib/format";
 import { CORES } from "@/lib/constants";
 
@@ -10,8 +12,15 @@ export const dynamic = "force-dynamic";
 
 export default async function Dashboard({ searchParams }: { searchParams: { mes?: string } }) {
   const mes = /^\d{4}-\d{2}$/.test(searchParams.mes ?? "") ? searchParams.mes! : mesAtual();
-  const d = montarDashboard(await carregar(), mes);
+  const [b, envelopes] = await Promise.all([carregar(), carregarEnvelopes()]);
+  const d = montarDashboard(b, mes);
   const a = d.atual;
+  // Retiradas feitas no Meu Assessor abatem do recebido
+  const catsEnv = new Set((envelopes ?? []).map((e) => e.categoria));
+  const retiradasMes = b.gastos
+    .filter((g) => catsEnv.has(g.categoria) && mesDe(g.data) === mes && g.data >= b.config.assessor_inicio)
+    .reduce((t, g) => t + g.valor, 0);
+  const recebidoLiq = a.recebido - retiradasMes;
   const maxProd = Math.max(1, ...d.produtos.map((p) => p.valor));
   const corProd = ["#00AEEF", "#EC008C", "#FFF200", "#F5F5F5", "#6B6B6B", "#33C3F2"];
 
@@ -27,7 +36,7 @@ export default async function Dashboard({ searchParams }: { searchParams: { mes?
             variacao={d.var.faturamento}
             cor="#00AEEF"
             Icone={ICifrao}
-            rodape={{ rotulo: "Recebido até agora", valor: brl(a.recebido) }}
+            rodape={{ rotulo: retiradasMes ? "Recebido (já descontadas as retiradas)" : "Recebido até agora", valor: brl(recebidoLiq) }}
           />
           <Kpi titulo="Total de despesas" valor={brl(a.despesas)} variacao={d.var.despesas} cor="#EC008C" Icone={ICarteira} inverso />
           <Kpi titulo="Lucro líquido" valor={brl(a.lucro)} variacao={d.var.lucro} cor="#00AEEF" Icone={ITendencia} />
@@ -122,7 +131,7 @@ export default async function Dashboard({ searchParams }: { searchParams: { mes?
             <h2 className="titulo mb-4">Resumo do Período</h2>
             <ul className="space-y-4">
               <Resumo icone={<ISeta className="h-5 w-5" />} cor="#00AEEF" rotulo="Faturamento (vendido)" valor={brl(a.faturamento)} />
-              <Resumo icone={<ICifrao className="h-5 w-5" />} cor="#00AEEF" rotulo="Recebido até agora" valor={brl(a.recebido)} />
+              <Resumo icone={<ICifrao className="h-5 w-5" />} cor="#00AEEF" rotulo={retiradasMes ? `Recebido após retiradas (${brl(a.recebido)} − ${brl(retiradasMes)})` : "Recebido até agora"} valor={brl(recebidoLiq)} />
               <Resumo icone={<ISeta baixo className="h-5 w-5" />} cor="#EC008C" rotulo="Despesas" valor={brl(a.despesas)} />
               <Resumo icone={<span className="text-lg font-bold">=</span>} cor="#8A9BB5" rotulo="Lucro líquido" valor={brl(a.lucro)} />
               <Resumo icone={<span className="text-lg font-bold">%</span>} cor="#8A9BB5" rotulo="Margem de lucro" valor={pct(d.margem)} />

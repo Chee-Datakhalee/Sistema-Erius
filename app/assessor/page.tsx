@@ -54,10 +54,10 @@ export default async function Assessor({ searchParams }: { searchParams: { mes?:
 
         {/* Resumo */}
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Kpi rotulo="Recebido neste mês" valor={brl(a.recebidoMes)} cls="text-ciano" />
-          <Kpi rotulo={`Recebido desde ${dataBR(a.inicio)}`} valor={brl(a.recebido)} cls="text-ink" />
-          <Kpi rotulo="Imposto separado (DAS)" valor={a.das ? brl(a.reservaDas) : "—"} cls="text-mute" />
-          <Kpi rotulo="Dividido nos envelopes" valor={brl(a.distribuivel)} cls="text-ink" />
+          <Kpi rotulo="Recebido neste mês" valor={brl(a.recebidoMes - a.retiradoMes)} cls="text-ciano" sub={a.retiradoMes ? `${brl(a.recebidoMes)} recebidos − ${brl(a.retiradoMes)} retirados` : undefined} />
+          <Kpi rotulo="Retirado neste mês" valor={a.retiradoMes ? `−${brl(a.retiradoMes)}` : brl(0)} cls="text-magenta" />
+          <Kpi rotulo={`Recebido desde ${dataBR(a.inicio)}`} valor={brl(a.recebido - a.retirado)} cls="text-ink" sub={a.retirado ? `${brl(a.recebido)} recebidos − ${brl(a.retirado)} retirados` : undefined} />
+          <Kpi rotulo="Em caixa agora" valor={brl(a.emCaixa)} cls={a.emCaixa < 0 ? "text-magenta" : "text-amarelo"} sub="soma do disponível dos envelopes" destaque />
         </div>
 
         {/* Envelopes */}
@@ -189,11 +189,12 @@ export default async function Assessor({ searchParams }: { searchParams: { mes?:
   );
 }
 
-function Kpi({ rotulo, valor, cls }: { rotulo: string; valor: string; cls: string }) {
+function Kpi({ rotulo, valor, cls, sub, destaque }: { rotulo: string; valor: string; cls: string; sub?: string; destaque?: boolean }) {
   return (
-    <div className="painel p-4">
+    <div className={`painel p-4 ${destaque ? "border border-amarelo/50" : ""}`}>
       <div className="text-xs text-mute">{rotulo}</div>
       <div className={`mt-1 font-display text-xl font-bold lg:text-2xl ${cls}`}>{valor}</div>
+      {sub && <div className="mt-0.5 text-[11px] text-mute">{sub}</div>}
     </div>
   );
 }

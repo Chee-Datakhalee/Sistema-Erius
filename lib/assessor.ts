@@ -87,8 +87,14 @@ export function montarAssessor(b: Base, envelopes: Envelope[], mes: string) {
   const somaPct = envelopes.reduce((s, e) => s + e.pct, 0);
   const dasInfo = das > 0 ? { mensal: das, reservado: reservaDas, pago: gastoCat("Impostos (DAS)"), saldo: reservaDas - gastoCat("Impostos (DAS)") } : null;
 
+  // Caixa dos envelopes: o que entrou menos o que já foi retirado
+  const retirado = lista.reduce((t, e) => t + e.gasto, 0);
+  const retiradoMes = lista.reduce((t, e) => t + e.gastoMes, 0);
+  const emCaixa = lista.reduce((t, e) => t + e.saldo, 0) + (dasInfo ? dasInfo.saldo : 0);
+
   return {
     inicio, antesDoInicio: mes < mesIni,
+    retirado, retiradoMes, emCaixa,
     recebido, recebidoMes, distribuivel, reservaDas,
     envelopes: lista, fora, foraLista, roas, somaPct, das: dasInfo,
   };
