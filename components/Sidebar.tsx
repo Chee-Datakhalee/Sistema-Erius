@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import Logo from "./Logo";
-import { ICasa, ICarteira, IEtiqueta, IPessoas, IGrafico, IEngrenagem, IPedido, IOS, IAssessor } from "./Icones";
+import { ICasa, ICarteira, IEtiqueta, IPessoas, IGrafico, IEngrenagem, IPedido, IOS, IAssessor, IRelatorio } from "./Icones";
 
 const itens = [
   { href: "/", nome: "Dashboard", I: ICasa },
@@ -13,6 +13,7 @@ const itens = [
   { href: "/os", nome: "Ordens de Serviço", I: IOS },
   { href: "/orcamentos", nome: "Orçamentos", I: IPedido },
   { href: "/faturamento", nome: "Faturamento e Lucro", I: IGrafico },
+  { href: "/relatorio", nome: "Relatório Mensal", I: IRelatorio },
   { href: "/config", nome: "Configurações", I: IEngrenagem },
 ];
 

@@ -20,3 +20,4 @@ export const IAlerta = ({ className }: P) => base(<><path d="M12 3l10 18H2L12 3z
 export const ILampada = ({ className }: P) => base(<><path d="M9 18h6M10 21h4" /><path d="M12 3a6 6 0 00-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0012 3z" /></>, className);
 export const IOS = ({ className }: P) => base(<><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 4V3h6v1M9 11l2 2 4-4M9 17h6" /></>, className);
 export const IAssessor = ({ className }: P) => base(<><path d="M4 7h16v12H4z" /><path d="M4 7l8 6 8-6" /><path d="M9 3h6" /></>, className);
+export const IRelatorio = ({ className }: P) => base(<><path d="M6 3h9l4 4v14H6z" /><path d="M14 3v5h5M9 17v-3M12 17v-6M15 17v-4" /></>, className);
