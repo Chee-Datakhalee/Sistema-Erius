@@ -28,11 +28,13 @@ const parseBR = (s: string) => {
   return isFinite(x) ? x : 0;
 };
 const r2 = (v: number) => Math.round(v * 100) / 100;
+const CAIXA_ENVIO = 2; // R$ por pedido (caixa custa R$1,50 → sobra R$0,50)
 
 export default function NovoOrcamento({ precos }: { precos: PrecoTabela[] }) {
   const tamanhos = [...new Set(precos.map((p) => p.tamanho))].sort((a, b) => parseFloat(a) - parseFloat(b));
   const [cliente, setCliente] = useState("");
   const [itens, setItens] = useState<Item[]>([]);
+  const [caixa, setCaixa] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
   const formRef = useRef<HTMLFormElement>(null);
@@ -75,7 +77,7 @@ export default function NovoOrcamento({ precos }: { precos: PrecoTabela[] }) {
     });
   }
 
-  const total = itens.reduce((s, i) => s + i.valor_total, 0);
+  const total = itens.reduce((s, i) => s + i.valor_total, 0) + (caixa ? CAIXA_ENVIO : 0);
 
   async function salvar() {
     if (!cliente.trim()) return setErro("Informe o cliente.");
@@ -85,11 +87,15 @@ export default function NovoOrcamento({ precos }: { precos: PrecoTabela[] }) {
     setErro("");
     setSalvando(true);
     const fd = new FormData(formRef.current!);
-    fd.set("itens", JSON.stringify(itens));
+    const itensFinal: Item[] = caixa
+      ? [...itens, { tipo: "manual", servico: "Outros", tamanho: null, quantidade: 1, descricao: "Caixa de envio", valor_unitario: CAIXA_ENVIO, valor_total: CAIXA_ENVIO }]
+      : itens;
+    fd.set("itens", JSON.stringify(itensFinal));
     try {
       await criarOrcamento(fd);
       setCliente("");
       setItens([]);
+      setCaixa(false);
       formRef.current?.reset();
     } catch (e: any) {
       setErro(e.message ?? "Erro ao salvar.");
@@ -254,6 +260,12 @@ export default function NovoOrcamento({ precos }: { precos: PrecoTabela[] }) {
               </li>
             ))}
           </ul>
+        )}
+        {itens.length > 0 && (
+          <label className="flex items-center gap-2 border-t border-line p-3 text-sm">
+            <input type="checkbox" checked={caixa} onChange={(e) => setCaixa(e.target.checked)} className="h-4 w-4 accent-ciano" />
+            Enviar em caixa (+{brl(CAIXA_ENVIO)}) — desmarcado = saquinho
+          </label>
         )}
         {itens.length > 0 && (
           <div className="flex items-center justify-between border-t border-line p-3">
