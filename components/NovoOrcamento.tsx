@@ -87,8 +87,14 @@ export default function NovoOrcamento({ precos }: { precos: PrecoTabela[] }) {
     setErro("");
     setSalvando(true);
     const fd = new FormData(formRef.current!);
+    // Caixa de envio: não aparece como item; os R$2 são somados direto no valor do primeiro item (etiqueta, se houver)
+    const alvo = Math.max(0, itens.findIndex((i) => i.tipo === "etiqueta"));
     const itensFinal: Item[] = caixa
-      ? [...itens, { tipo: "manual", servico: "Outros", tamanho: null, quantidade: 1, descricao: "Caixa de envio", valor_unitario: CAIXA_ENVIO, valor_total: CAIXA_ENVIO }]
+      ? itens.map((it, idx) => {
+          if (idx !== alvo) return it;
+          const vt = r2(it.valor_total + CAIXA_ENVIO);
+          return { ...it, valor_total: vt, valor_unitario: vt / (it.quantidade || 1) };
+        })
       : itens;
     fd.set("itens", JSON.stringify(itensFinal));
     try {
@@ -264,7 +270,7 @@ export default function NovoOrcamento({ precos }: { precos: PrecoTabela[] }) {
         {itens.length > 0 && (
           <label className="flex items-center gap-2 border-t border-line p-3 text-sm">
             <input type="checkbox" checked={caixa} onChange={(e) => setCaixa(e.target.checked)} className="h-4 w-4 accent-ciano" />
-            Enviar em caixa (+{brl(CAIXA_ENVIO)}) — desmarcado = saquinho
+            Enviar em caixa (+{brl(CAIXA_ENVIO)}, já somado no valor) — desmarcado = saquinho
           </label>
         )}
         {itens.length > 0 && (
