@@ -1,6 +1,7 @@
 "use client";
 import { useRef, useState } from "react";
-import { criarOrcamento } from "@/app/actions";
+import { useRouter } from "next/navigation";
+import { criarOrcamento, atualizarOrcamento } from "@/app/actions";
 import { precoSugerido, lerMedida, type PrecoTabela } from "@/lib/precos";
 import { SERVICOS } from "@/lib/constants";
 
@@ -30,10 +31,30 @@ const parseBR = (s: string) => {
 const r2 = (v: number) => Math.round(v * 100) / 100;
 const CAIXA_ENVIO = 2; // R$ por pedido (caixa custa R$1,50 → sobra R$0,50)
 
-export default function NovoOrcamento({ precos }: { precos: PrecoTabela[] }) {
+type Inicial = {
+  id: number; cliente: string; data: string; validade_dias: number; prazo: string | null; pagamento: string | null;
+  observacoes: string | null; bonificacao: string | null; producao_prioritaria: boolean;
+  itens: { tipo: "etiqueta" | "manual"; servico: string; tamanho: string | null; quantidade: number; descricao: string | null; valor_unitario: number; valor_total: number }[];
+};
+
+export default function NovoOrcamento({ precos, inicial }: { precos: PrecoTabela[]; inicial?: Inicial }) {
   const tamanhos = [...new Set(precos.map((p) => p.tamanho))].sort((a, b) => parseFloat(a) - parseFloat(b));
-  const [cliente, setCliente] = useState("");
-  const [itens, setItens] = useState<Item[]>([]);
+  const router = useRouter();
+  const editando = !!inicial;
+  const [cliente, setCliente] = useState(inicial?.cliente ?? "");
+  const [itens, setItens] = useState<Item[]>(() =>
+    (inicial?.itens ?? []).map((it) => {
+      if (it.tipo !== "etiqueta") return { ...it };
+      const tam = it.tamanho ?? "";
+      const outra = !tamanhos.includes(tam);
+      // mantém o preço que já estava no orçamento
+      return {
+        ...it, outra, medidaTxt: outra ? tam : "", qtdTxt: String(it.quantidade),
+        sugerido: tam ? r2(precoSugerido(precos, tam, it.quantidade)) : 0,
+        manualTxt: it.valor_total.toFixed(2).replace(".", ","),
+      };
+    })
+  );
   const [caixa, setCaixa] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
@@ -98,6 +119,12 @@ export default function NovoOrcamento({ precos }: { precos: PrecoTabela[] }) {
       : itens;
     fd.set("itens", JSON.stringify(itensFinal));
     try {
+      if (editando) {
+        fd.set("id", String(inicial!.id));
+        await atualizarOrcamento(fd);
+        router.push("/orcamentos");
+        return;
+      }
       await criarOrcamento(fd);
       setCliente("");
       setItens([]);
@@ -119,22 +146,22 @@ export default function NovoOrcamento({ precos }: { precos: PrecoTabela[] }) {
         </div>
         <div>
           <label className="rotulo" htmlFor="data">Data</label>
-          <input id="data" name="data" type="date" defaultValue={new Date().toISOString().slice(0, 10)} className="campo" />
+          <input id="data" name="data" type="date" defaultValue={inicial?.data ?? new Date().toISOString().slice(0, 10)} className="campo" />
         </div>
         <div>
           <label className="rotulo" htmlFor="validade_dias">Validade (dias)</label>
-          <input id="validade_dias" name="validade_dias" defaultValue="15" inputMode="numeric" className="campo" />
+          <input id="validade_dias" name="validade_dias" defaultValue={String(inicial?.validade_dias ?? 15)} inputMode="numeric" className="campo" />
         </div>
         <div className="col-span-2">
           <label className="rotulo" htmlFor="prazo">Prazo de produção</label>
-          <input id="prazo" name="prazo" defaultValue="5 dias úteis após aprovação da arte" className="campo" />
+          <input id="prazo" name="prazo" defaultValue={inicial ? inicial.prazo ?? "" : "5 dias úteis após aprovação da arte"} className="campo" />
         </div>
         <div className="col-span-2">
           <label className="rotulo" htmlFor="pagamento">Forma de pagamento</label>
-          <input id="pagamento" name="pagamento" defaultValue="50% na aprovação e 50% na entrega | PIX" className="campo" />
+          <input id="pagamento" name="pagamento" defaultValue={inicial ? inicial.pagamento ?? "" : "50% na aprovação e 50% na entrega | PIX"} className="campo" />
         </div>
         <label className="flex items-end gap-2 pb-2 text-sm">
-          <input type="checkbox" name="producao_prioritaria" defaultChecked className="h-4 w-4 accent-ciano" />
+          <input type="checkbox" name="producao_prioritaria" defaultChecked={inicial ? inicial.producao_prioritaria : true} className="h-4 w-4 accent-ciano" />
           Oferecer produção prioritária (+R$35, 48h)
         </label>
         <div className="col-span-2 md:col-span-2">
@@ -142,13 +169,14 @@ export default function NovoOrcamento({ precos }: { precos: PrecoTabela[] }) {
           <input
             id="bonificacao"
             name="bonificacao"
+            defaultValue={inicial?.bonificacao ?? ""}
             className="campo"
             placeholder="Ex: serão enviadas algumas etiquetas a mais, sem alteração no valor"
           />
         </div>
         <div className="col-span-2 md:col-span-4">
           <label className="rotulo" htmlFor="observacoes">Observações (opcional)</label>
-          <input id="observacoes" name="observacoes" className="campo" />
+          <input id="observacoes" name="observacoes" defaultValue={inicial?.observacoes ?? ""} className="campo" />
         </div>
       </div>
 
@@ -267,7 +295,7 @@ export default function NovoOrcamento({ precos }: { precos: PrecoTabela[] }) {
             ))}
           </ul>
         )}
-        {itens.length > 0 && (
+        {itens.length > 0 && !editando && (
           <label className="flex items-center gap-2 border-t border-line p-3 text-sm">
             <input type="checkbox" checked={caixa} onChange={(e) => setCaixa(e.target.checked)} className="h-4 w-4 accent-ciano" />
             Enviar em caixa (+{brl(CAIXA_ENVIO)}, já somado no valor) — desmarcado = saquinho
@@ -282,9 +310,12 @@ export default function NovoOrcamento({ precos }: { precos: PrecoTabela[] }) {
       </div>
 
       {erro && <p className="text-sm text-magenta">{erro}</p>}
-      <button type="submit" disabled={salvando} className="botao disabled:opacity-60">
-        {salvando ? "Salvando..." : "Salvar orçamento"}
-      </button>
+      <div className="flex gap-2">
+        <button type="submit" disabled={salvando} className="botao disabled:opacity-60">
+          {salvando ? "Salvando..." : editando ? "Salvar alterações" : "Salvar orçamento"}
+        </button>
+        {editando && <a href="/orcamentos" className="botao2">Cancelar</a>}
+      </div>
     </form>
   );
 }

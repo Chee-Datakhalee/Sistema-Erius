@@ -1,6 +1,7 @@
 "use client";
 import { useRef, useState } from "react";
-import { criarOS } from "@/app/actions";
+import { useRouter } from "next/navigation";
+import { criarOS, atualizarOS } from "@/app/actions";
 import { SERVICOS, FORMAS } from "@/lib/constants";
 
 const brl = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v || 0);
@@ -13,14 +14,31 @@ const parse = (s: string) => {
 };
 const paraCampo = (v: number) => v.toFixed(2).replace(".", ",");
 
-type Item = { servico: string; descricao: string; quantidade: string; unitario: string };
+type Item = { servico: string; descricao: string; quantidade: string; unitario: string; fixo?: number };
 const itemVazio = (): Item => ({ servico: SERVICOS[0], descricao: "", quantidade: "1", unitario: "" });
 const qtdDe = (it: Item) => Math.max(1, Math.round(parse(it.quantidade)) || 1);
-const subtotal = (it: Item) => Math.round(qtdDe(it) * parse(it.unitario) * 100) / 100;
+// "fixo" guarda o total original (ex: vindo do orçamento) até você mexer na qtd ou no valor
+const subtotal = (it: Item) => it.fixo ?? Math.round(qtdDe(it) * parse(it.unitario) * 100) / 100;
 
-export default function NovaOS({ hoje, nomes }: { hoje: string; nomes: string[] }) {
+type InicialOS = {
+  id: number; cliente: string; telefone: string | null; data: string; prazo_entrega: string | null;
+  forma_pagto: string | null; observacoes: string | null;
+  itens: { servico: string; descricao: string; quantidade: number; valor_unitario: number; valor_total: number }[];
+};
+
+export default function NovaOS({ hoje, nomes, inicial, pagoAtual = 0 }: { hoje: string; nomes: string[]; inicial?: InicialOS; pagoAtual?: number }) {
   const formRef = useRef<HTMLFormElement>(null);
-  const [itens, setItens] = useState<Item[]>([itemVazio()]);
+  const router = useRouter();
+  const editando = !!inicial;
+  const [itens, setItens] = useState<Item[]>(() =>
+    inicial?.itens.length
+      ? inicial.itens.map((i) => ({
+          servico: i.servico, descricao: i.descricao, quantidade: String(i.quantidade),
+          unitario: (i.valor_total / (i.quantidade || 1)).toFixed(2).replace(".", ","),
+          fixo: i.valor_total,
+        }))
+      : [itemVazio()]
+  );
   const [pagou50, setPagou50] = useState<"sim" | "nao">("nao");
   const [pagoTxt, setPagoTxt] = useState("");
   const [editado, setEditado] = useState(false);
@@ -29,11 +47,18 @@ export default function NovaOS({ hoje, nomes }: { hoje: string; nomes: string[] 
 
   const total = itens.reduce((s, i) => s + subtotal(i), 0);
   const metade = Math.round(total * 50) / 100;
-  const pago = pagou50 === "sim" ? (editado ? parse(pagoTxt) : metade) : 0;
+  const pago = editando ? pagoAtual : pagou50 === "sim" ? (editado ? parse(pagoTxt) : metade) : 0;
   const falta = total - pago;
 
   function mudar(i: number, patch: Partial<Item>) {
-    setItens((v) => v.map((it, idx) => (idx === i ? { ...it, ...patch } : it)));
+    setItens((v) =>
+      v.map((it, idx) => {
+        if (idx !== i) return it;
+        const novo = { ...it, ...patch };
+        if ("quantidade" in patch || "unitario" in patch) delete novo.fixo;
+        return novo;
+      })
+    );
   }
 
   async function salvar() {
@@ -42,6 +67,20 @@ export default function NovaOS({ hoje, nomes }: { hoje: string; nomes: string[] 
     const validos = itens.filter((i) => i.descricao.trim());
     if (!validos.length) return setErro("Descreva ao menos um serviço.");
     if (!fd.get("prazo_entrega")) return setErro("Informe o prazo de entrega.");
+    if (editando) {
+      setErro("");
+      setSalvando(true);
+      fd.set("id", String(inicial!.id));
+      fd.set("itens", JSON.stringify(validos.map((i) => ({ servico: i.servico, descricao: i.descricao.trim(), quantidade: qtdDe(i), valor_unitario: parse(i.unitario), valor_total: subtotal(i) }))));
+      try {
+        await atualizarOS(fd);
+        router.push("/os");
+      } catch (e: any) {
+        setErro(e?.message ?? "Erro ao salvar.");
+        setSalvando(false);
+      }
+      return;
+    }
     setErro("");
     setSalvando(true);
     fd.set(
@@ -69,24 +108,24 @@ export default function NovaOS({ hoje, nomes }: { hoje: string; nomes: string[] 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
         <div className="col-span-2">
           <label className="rotulo" htmlFor="os-cliente">Cliente</label>
-          <input id="os-cliente" name="cliente" list="os-lista-clientes" required className="campo" placeholder="Nome do cliente" />
+          <input id="os-cliente" name="cliente" list="os-lista-clientes" required defaultValue={inicial?.cliente ?? ""} className="campo" placeholder="Nome do cliente" />
           <datalist id="os-lista-clientes">{nomes.map((n) => <option key={n} value={n} />)}</datalist>
         </div>
         <div>
           <label className="rotulo" htmlFor="os-telefone">WhatsApp</label>
-          <input id="os-telefone" name="telefone" inputMode="tel" className="campo" placeholder="(19) 99999-9999" />
+          <input id="os-telefone" name="telefone" inputMode="tel" defaultValue={inicial?.telefone ?? ""} className="campo" placeholder="(19) 99999-9999" />
         </div>
         <div>
           <label className="rotulo" htmlFor="os-data">Data da OS</label>
-          <input id="os-data" name="data" type="date" defaultValue={hoje} className="campo" />
+          <input id="os-data" name="data" type="date" defaultValue={inicial?.data ?? hoje} className="campo" />
         </div>
         <div>
           <label className="rotulo" htmlFor="os-prazo">Prazo de entrega</label>
-          <input id="os-prazo" name="prazo_entrega" type="date" required min={hoje} className="campo" />
+          <input id="os-prazo" name="prazo_entrega" type="date" required min={editando ? undefined : hoje} defaultValue={inicial?.prazo_entrega ?? ""} className="campo" />
         </div>
         <div>
           <label className="rotulo" htmlFor="os-forma">Pagamento</label>
-          <select id="os-forma" name="forma_pagto" className="campo">{FORMAS.map((f) => <option key={f}>{f}</option>)}</select>
+          <select id="os-forma" name="forma_pagto" defaultValue={inicial?.forma_pagto ?? FORMAS[0]} className="campo">{FORMAS.map((f) => <option key={f}>{f}</option>)}</select>
         </div>
       </div>
 
@@ -134,6 +173,17 @@ export default function NovaOS({ hoje, nomes }: { hoje: string; nomes: string[] 
         </div>
       </div>
 
+      {editando ? (
+        <div className="flex flex-wrap justify-end gap-6 rounded-lg border border-line p-4 text-right">
+          <div><div className="rotulo">Pago até agora</div><div className="font-display text-lg font-semibold text-ciano">{brl(pago)}</div></div>
+          <div>
+            <div className="rotulo">Falta pagar</div>
+            <div className={`font-display text-lg font-bold ${falta > 0.005 ? "text-magenta" : "text-ciano"}`}>{falta > 0.005 ? brl(falta) : "Quitado"}</div>
+          </div>
+          <p className="basis-full text-xs text-mute">Os pagamentos não mudam aqui. Pra registrar mais, use "Receber" na lista.</p>
+        </div>
+      ) : (
+      <>
       {/* Pagamento */}
       <div className="grid gap-4 rounded-lg border border-line p-4 md:grid-cols-[auto_1fr_auto]">
         <div>
@@ -195,15 +245,21 @@ export default function NovaOS({ hoje, nomes }: { hoje: string; nomes: string[] 
         </div>
       </div>
 
+      </>
+      )}
+
       <div>
         <label className="rotulo" htmlFor="os-obs">Observações (opcional)</label>
-        <input id="os-obs" name="observacoes" className="campo" placeholder="Ex: arte enviada pelo WhatsApp, retirar na loja" />
+        <input id="os-obs" name="observacoes" defaultValue={inicial?.observacoes ?? ""} className="campo" placeholder="Ex: arte enviada pelo WhatsApp, retirar na loja" />
       </div>
 
       {erro && <p className="text-sm text-magenta">{erro}</p>}
-      <button type="submit" disabled={salvando} className="botao disabled:opacity-60">
-        {salvando ? "Salvando..." : "Abrir OS"}
-      </button>
+      <div className="flex gap-2">
+        <button type="submit" disabled={salvando} className="botao disabled:opacity-60">
+          {salvando ? "Salvando..." : editando ? "Salvar alterações" : "Abrir OS"}
+        </button>
+        {editando && <a href="/os" className="botao2">Cancelar</a>}
+      </div>
     </form>
   );
 }

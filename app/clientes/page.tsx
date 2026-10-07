@@ -1,12 +1,13 @@
 import Cabecalho from "@/components/Cabecalho";
 import Excluir from "@/components/Excluir";
+import Editar, { Campo, paraCampo } from "@/components/Editar";
 import Enviar from "@/components/Enviar";
 import FormReset from "@/components/FormReset";
 import PainelCobranca from "@/components/PainelCobranca";
 import { carregar, pagoPorPedido, statusPedido } from "@/lib/data";
 import { brl, dataBR, hoje, mesAtual, mesDe, mesLongo, num } from "@/lib/format";
 import { SERVICOS, FORMAS } from "@/lib/constants";
-import { criarPedido, registrarPagamento, excluirPedido, excluirPagamento } from "../actions";
+import { criarPedido, registrarPagamento, excluirPedido, excluirPagamento, atualizarPedido, atualizarPagamento } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -146,7 +147,14 @@ function TabelaPedidos({ lista, pagos, b }: { lista: Awaited<ReturnType<typeof c
                     <summary className="cursor-pointer text-right">{pgs.length} pgto</summary>
                     {pgs.map((x) => (
                       <div key={x.id} className="flex items-center justify-end gap-1">
-                        {dataBR(x.data)} {brl(x.valor)} <Excluir action={excluirPagamento} id={x.id} texto="Excluir este pagamento?" />
+                        {dataBR(x.data)} {brl(x.valor)}
+                        <Editar titulo="Editar pagamento" action={atualizarPagamento}>
+                          <input type="hidden" name="id" value={x.id} />
+                          <Campo nome="valor" rotulo="Valor (R$)" valor={paraCampo(x.valor)} decimal />
+                          <Campo nome="data" rotulo="Data" valor={x.data} tipo="date" />
+                          <Campo nome="forma" rotulo="Forma" valor={x.forma ?? "Pix"} opcoes={FORMAS} />
+                        </Editar>
+                        <Excluir action={excluirPagamento} id={x.id} texto="Excluir este pagamento?" />
                       </div>
                     ))}
                   </details>
@@ -166,7 +174,28 @@ function TabelaPedidos({ lista, pagos, b }: { lista: Awaited<ReturnType<typeof c
                   <span className="text-xs text-mute">Quitado</span>
                 )}
               </td>
-              <td><Excluir action={excluirPedido} id={p.id} texto={`Excluir o pedido de ${p.cliente}?`} /></td>
+              <td>
+                <div className="flex items-center">
+                  <Editar titulo="Editar pedido" action={atualizarPedido}>
+                    <input type="hidden" name="id" value={p.id} />
+                    {p.descricao?.startsWith("OS #") && (
+                      <p className="col-span-2 text-xs text-amarelo">Este pedido veio de uma OS. Prefira editar pela aba Ordens de Serviço, pra OS e pedido ficarem iguais.</p>
+                    )}
+                    <Campo nome="cliente" rotulo="Cliente" valor={p.cliente} largo />
+                    <Campo nome="servico" rotulo="Serviço" valor={p.servico} opcoes={SERVICOS} />
+                    <Campo nome="quantidade" rotulo="Quantidade" valor={p.quantidade} />
+                    <Campo nome="descricao" rotulo="Descrição" valor={p.descricao} largo />
+                    <Campo nome="valor_base" rotulo="Valor (R$)" valor={paraCampo(p.valor_base)} decimal />
+                    <Campo nome="data" rotulo="Data" valor={p.data} tipo="date" />
+                    <Campo nome="forma_pagto" rotulo="Pagamento" valor={p.forma_pagto ?? "Pix"} opcoes={FORMAS} />
+                    <label className="flex items-end gap-2 pb-2 text-sm">
+                      <input type="checkbox" name="prioridade" defaultChecked={p.prioridade} className="h-4 w-4 accent-verde" /> Prioridade 48h
+                    </label>
+                    <Campo nome="observacoes" rotulo="Observações" valor={p.observacoes} largo />
+                  </Editar>
+                  <Excluir action={excluirPedido} id={p.id} texto={`Excluir o pedido de ${p.cliente}?`} />
+                </div>
+              </td>
             </tr>
           );
         })}

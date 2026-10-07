@@ -407,3 +407,145 @@ export async function retirarEnvelope(fd: FormData) {
   );
   tudo();
 }
+
+/* ---------- Edição ---------- */
+// Só atualiza os campos que vieram no formulário
+const tem = (fd: FormData, k: string) => fd.has(k);
+
+export async function atualizarGasto(fd: FormData) {
+  const up: Record<string, unknown> = {};
+  if (tem(fd, "data")) up.data = txt(fd.get("data")) ?? hoje();
+  if (tem(fd, "descricao")) up.descricao = txt(fd.get("descricao")) ?? "Gasto";
+  if (tem(fd, "categoria")) up.categoria = txt(fd.get("categoria")) ?? "Outros";
+  if (tem(fd, "valor")) up.valor = valor(fd.get("valor"));
+  if (tem(fd, "observacoes")) up.observacoes = txt(fd.get("observacoes"));
+  if (tem(fd, "parcela")) {
+    const parc = String(fd.get("parcela") ?? "").match(/(\d+)\s*\/\s*(\d+)/);
+    up.parcela_atual = parc ? Number(parc[1]) : null;
+    up.parcela_total = parc ? Number(parc[2]) : null;
+  }
+  await run(db().from("gastos").update(up).eq("id", Number(fd.get("id"))));
+  tudo();
+}
+
+export async function atualizarPedido(fd: FormData) {
+  await run(
+    db().from("pedidos").update({
+      cliente: txt(fd.get("cliente")) ?? "Sem nome",
+      servico: txt(fd.get("servico")) ?? "Outros",
+      descricao: txt(fd.get("descricao")),
+      quantidade: Math.round(valor(fd.get("quantidade"))) || 1,
+      data: txt(fd.get("data")) ?? hoje(),
+      prioridade: fd.get("prioridade") === "on",
+      valor_base: valor(fd.get("valor_base")),
+      forma_pagto: txt(fd.get("forma_pagto")) ?? "Pix",
+      observacoes: txt(fd.get("observacoes")),
+    }).eq("id", Number(fd.get("id")))
+  );
+  tudo();
+}
+
+export async function atualizarPagamento(fd: FormData) {
+  await run(
+    db().from("pagamentos").update({
+      valor: valor(fd.get("valor")),
+      data: txt(fd.get("data")) ?? hoje(),
+      forma: txt(fd.get("forma")) ?? "Pix",
+    }).eq("id", Number(fd.get("id")))
+  );
+  tudo();
+}
+
+export async function atualizarFixa(fd: FormData) {
+  await run(
+    db().from("despesas_fixas").update({
+      nome: txt(fd.get("nome")) ?? "Despesa",
+      categoria: txt(fd.get("categoria")) ?? "Contas fixas",
+      valor: valor(fd.get("valor")),
+    }).eq("id", Number(fd.get("id")))
+  );
+  tudo();
+}
+
+export async function atualizarOrcamento(fd: FormData) {
+  const s = db();
+  const id = Number(fd.get("id"));
+  const itens = JSON.parse(String(fd.get("itens") ?? "[]")) as {
+    tipo: "etiqueta" | "manual"; servico: string; tamanho: string | null;
+    quantidade: number; descricao: string | null; valor_unitario: number; valor_total: number;
+  }[];
+  if (!itens.length) throw new Error("O orçamento precisa de ao menos um item.");
+  await run(
+    s.from("orcamentos").update({
+      cliente: txt(fd.get("cliente")) ?? "Sem nome",
+      data: txt(fd.get("data")) ?? hoje(),
+      validade_dias: Math.round(valor(fd.get("validade_dias"))) || 15,
+      prazo: txt(fd.get("prazo")),
+      pagamento: txt(fd.get("pagamento")),
+      observacoes: txt(fd.get("observacoes")),
+      bonificacao: txt(fd.get("bonificacao")),
+      producao_prioritaria: fd.get("producao_prioritaria") === "on",
+    }).eq("id", id)
+  );
+  // troca os itens: grava os novos antes de apagar os antigos (não perde nada se der erro)
+  const { data: antigos } = await s.from("orcamento_itens").select("id").eq("orcamento_id", id);
+  await run(
+    s.from("orcamento_itens").insert(
+      itens.map((it, i) => ({
+        orcamento_id: id, tipo: it.tipo, servico: it.servico, tamanho: it.tamanho, quantidade: it.quantidade,
+        descricao: it.descricao, valor_unitario: it.valor_unitario, valor_total: it.valor_total, ordem: i,
+      }))
+    )
+  );
+  const ids = (antigos ?? []).map((a) => a.id);
+  if (ids.length) await run(s.from("orcamento_itens").delete().in("id", ids));
+  tudo();
+  revalidatePath("/orcamentos");
+}
+
+export async function atualizarOS(fd: FormData) {
+  const s = db();
+  const id = Number(fd.get("id"));
+  const brutos = JSON.parse(String(fd.get("itens") ?? "[]")) as ItemOS[];
+  const itens = brutos
+    .filter((i) => String(i.descricao ?? "").trim())
+    .map((i) => {
+      const quantidade = Math.max(1, Math.round(Number(i.quantidade) || 1));
+      const valor_unitario = Number(i.valor_unitario) || 0;
+      const valor_total = i.valor_total != null && Number(i.valor_total) > 0 ? Number(i.valor_total) : Math.round(quantidade * valor_unitario * 100) / 100;
+      return { servico: i.servico || "Outros", descricao: String(i.descricao).trim(), quantidade, valor_unitario, valor_total };
+    });
+  if (!itens.length) throw new Error("A OS precisa de ao menos um serviço.");
+
+  const cliente = txt(fd.get("cliente")) ?? "Sem nome";
+  const data = txt(fd.get("data")) ?? hoje();
+  const forma = txt(fd.get("forma_pagto")) ?? "Pix";
+  const { data: os, error } = await s.from("ordens_servico").select("pedido_id").eq("id", id).single();
+  if (error) throw new Error(error.message);
+
+  await run(
+    s.from("ordens_servico").update({
+      cliente, telefone: txt(fd.get("telefone")), data, prazo_entrega: txt(fd.get("prazo_entrega")),
+      forma_pagto: forma, observacoes: txt(fd.get("observacoes")),
+    }).eq("id", id)
+  );
+  const { data: antigos } = await s.from("os_itens").select("id").eq("os_id", id);
+  await run(s.from("os_itens").insert(itens.map((i, ordem) => ({ ...i, os_id: id, ordem }))));
+  const ids = (antigos ?? []).map((a) => a.id);
+  if (ids.length) await run(s.from("os_itens").delete().in("id", ids));
+
+  // mantém o pedido de Clientes igual à OS (pagamentos não mudam)
+  if (os?.pedido_id) {
+    const total = Math.round(itens.reduce((t, i) => t + i.valor_total, 0) * 100) / 100;
+    const principal = [...itens].sort((a, b) => b.valor_total - a.valor_total)[0];
+    const numero = String(id).padStart(4, "0");
+    await run(
+      s.from("pedidos").update({
+        cliente, servico: principal.servico, data, forma_pagto: forma, valor_base: total, prioridade: false,
+        quantidade: itens.length === 1 ? itens[0].quantidade : 1,
+        descricao: `OS #${numero} · ${itens.map((i) => `${i.quantidade}x ${i.descricao}`).join(" + ")}`.slice(0, 300),
+      }).eq("id", os.pedido_id)
+    );
+  }
+  tudo();
+}

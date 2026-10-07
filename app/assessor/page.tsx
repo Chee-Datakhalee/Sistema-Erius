@@ -5,7 +5,8 @@ import { ICheck, IAlerta, ILampada } from "@/components/Icones";
 import { carregar } from "@/lib/data";
 import { carregarEnvelopes, montarAssessor } from "@/lib/assessor";
 import { brl, dataBR, hoje, mesAtual, mesLongo } from "@/lib/format";
-import { retirarEnvelope, excluirGasto } from "../actions";
+import { retirarEnvelope, excluirGasto, atualizarGasto } from "../actions";
+import Editar, { Campo, paraCampo } from "@/components/Editar";
 import Excluir from "@/components/Excluir";
 
 export const dynamic = "force-dynamic";
@@ -133,6 +134,12 @@ export default async function Assessor({ searchParams }: { searchParams: { mes?:
                           <span className="min-w-0 truncate">{dataBR(g.data)} · {g.descricao}</span>
                           <span className="flex items-center gap-1 text-ink">
                             −{brl(g.valor)}
+                            <Editar titulo="Editar retirada" action={atualizarGasto}>
+                              <input type="hidden" name="id" value={g.id} />
+                              <Campo nome="descricao" rotulo="Descrição" valor={g.descricao} largo />
+                              <Campo nome="valor" rotulo="Valor (R$)" valor={paraCampo(g.valor)} decimal />
+                              <Campo nome="data" rotulo="Data" valor={g.data} tipo="date" />
+                            </Editar>
                             <Excluir action={excluirGasto} id={g.id} texto={`Excluir a retirada de ${brl(g.valor)}? O valor volta para o envelope.`} />
                           </span>
                         </li>

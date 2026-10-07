@@ -7,7 +7,8 @@ import { carregar, carregarPrecos } from "@/lib/data";
 import { carregarEnvelopes } from "@/lib/assessor";
 import { brl } from "@/lib/format";
 import { CATEGORIAS_GASTO } from "@/lib/constants";
-import { salvarConfig, criarFixa, alternarFixa, excluirFixa, salvarPreco, salvarAssessor } from "../actions";
+import { salvarConfig, criarFixa, alternarFixa, excluirFixa, salvarPreco, salvarAssessor, atualizarFixa } from "../actions";
+import Editar, { Campo, paraCampo } from "@/components/Editar";
 
 export const dynamic = "force-dynamic";
 
@@ -59,7 +60,17 @@ export default async function Config() {
                         <button className="botao2 py-1 text-xs">{f.ativo ? "Pausar" : "Ativar"}</button>
                       </form>
                     </td>
-                    <td className="w-8 px-0"><Excluir action={excluirFixa} id={f.id} /></td>
+                    <td className="w-16 px-0">
+                      <div className="flex items-center justify-end">
+                        <Editar titulo="Editar despesa fixa" action={atualizarFixa}>
+                          <input type="hidden" name="id" value={f.id} />
+                          <Campo nome="nome" rotulo="Nome" valor={f.nome} largo />
+                          <Campo nome="categoria" rotulo="Categoria" valor={f.categoria} opcoes={CATEGORIAS_GASTO} />
+                          <Campo nome="valor" rotulo="Valor (R$)" valor={paraCampo(f.valor)} decimal />
+                        </Editar>
+                        <Excluir action={excluirFixa} id={f.id} />
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>

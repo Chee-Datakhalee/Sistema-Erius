@@ -174,6 +174,7 @@ function CartaoOS({ o, hj }: { o: Linha; hj: string }) {
           {whats && (
             <a href={whats} target="_blank" rel="noopener noreferrer" className="botao2 py-1 text-sm">WhatsApp</a>
           )}
+          <a href={`/os/${o.id}/editar`} className="botao2 py-1 text-sm">Editar</a>
           <a href={`/os/${o.id}/pdf`} target="_blank" rel="noopener noreferrer" className="botao2 py-1 text-sm">Imprimir OS</a>
           <Excluir action={excluirOS} id={o.id} texto={`Excluir a OS #${numero} de ${o.cliente}? O pedido e os pagamentos dela também saem.`} />
         </div>

@@ -56,6 +56,7 @@ export default function ListaOrcamentos({ orcamentos, hoje }: { orcamentos: Orc[
               <a href={`/orcamentos/${o.id}/pdf`} target="_blank" rel="noopener noreferrer" className="botao2 py-1.5 text-sm">
                 Exportar PDF
               </a>
+              <a href={`/orcamentos/${o.id}/editar`} className="botao2 py-1.5 text-sm">Editar</a>
               {o.status === "pendente" && (
                 <>
                   <AprovarOrcamento id={o.id} total={total} hoje={hoje} />

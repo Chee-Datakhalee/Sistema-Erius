@@ -1,11 +1,12 @@
 import Cabecalho from "@/components/Cabecalho";
 import Excluir from "@/components/Excluir";
+import Editar, { Campo, paraCampo } from "@/components/Editar";
 import Enviar from "@/components/Enviar";
 import FormReset from "@/components/FormReset";
 import { carregar } from "@/lib/data";
 import { brl, dataBR, hoje, mesAtual, mesDe, mesLongo, pct } from "@/lib/format";
 import { CATEGORIAS_GASTO, LIMITES } from "@/lib/constants";
-import { criarGasto, excluirGasto, lancarFixas } from "../actions";
+import { criarGasto, excluirGasto, lancarFixas, atualizarGasto } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -101,7 +102,20 @@ export default async function Gastos({ searchParams }: { searchParams: { mes?: s
                     <td>{g.categoria}</td>
                     <td className="text-mute">{g.parcela_atual ? `${g.parcela_atual}/${g.parcela_total}` : "À vista"}</td>
                     <td className="text-right">{brl(g.valor)}</td>
-                    <td><Excluir action={excluirGasto} id={g.id} /></td>
+                    <td className="whitespace-nowrap">
+                      <div className="flex items-center justify-end">
+                        <Editar titulo="Editar gasto" action={atualizarGasto}>
+                          <input type="hidden" name="id" value={g.id} />
+                          <Campo nome="descricao" rotulo="Descrição" valor={g.descricao} largo />
+                          <Campo nome="categoria" rotulo="Categoria" valor={g.categoria} opcoes={CATEGORIAS_GASTO} />
+                          <Campo nome="valor" rotulo="Valor (R$)" valor={paraCampo(g.valor)} decimal />
+                          <Campo nome="data" rotulo="Data" valor={g.data} tipo="date" />
+                          <Campo nome="parcela" rotulo="Parcela (ex: 2/10)" valor={g.parcela_atual ? `${g.parcela_atual}/${g.parcela_total}` : ""} />
+                          <Campo nome="observacoes" rotulo="Observações" valor={g.observacoes} largo />
+                        </Editar>
+                        <Excluir action={excluirGasto} id={g.id} />
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
