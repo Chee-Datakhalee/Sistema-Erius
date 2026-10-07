@@ -3,7 +3,7 @@ import Enviar from "@/components/Enviar";
 import FormReset from "@/components/FormReset";
 import { ICheck, IAlerta, ILampada } from "@/components/Icones";
 import { carregar } from "@/lib/data";
-import { carregarEnvelopes, montarAssessor } from "@/lib/assessor";
+import { carregarEnvelopes, montarAssessor, categoriasDoEnvelope } from "@/lib/assessor";
 import { brl, dataBR, hoje, mesAtual, mesLongo } from "@/lib/format";
 import { retirarEnvelope, excluirGasto, atualizarGasto } from "../actions";
 import Editar, { Campo } from "@/components/Editar";
@@ -17,6 +17,7 @@ const COR: Record<string, { txt: string; barra: string; borda: string }> = {
   "Bobina/Vinil": { txt: "text-magenta", barra: "bg-magenta", borda: "border-magenta/40" },
   "Pró-labore": { txt: "text-amarelo", barra: "bg-amarelo", borda: "border-amarelo/40" },
   Tinta: { txt: "text-ink", barra: "bg-ink", borda: "border-ink/30" },
+  "Caixa da empresa": { txt: "text-ciano", barra: "bg-ciano", borda: "border-ciano/40" },
 };
 const corDe = (cat: string) => COR[cat] ?? { txt: "text-ink", barra: "bg-mute", borda: "border-line" };
 const fmtX = (v: number) => `${v.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}x`;
@@ -72,7 +73,7 @@ export default async function Assessor({ searchParams }: { searchParams: { mes?:
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <h2 className="titulo">{e.nome}</h2>
-                    <p className="text-xs text-mute">{e.pct.toLocaleString("pt-BR")}% do recebido · gastos em "{e.categoria}"</p>
+                    <p className="text-xs text-mute">{e.pct.toLocaleString("pt-BR")}% do recebido · gastos em "{categoriasDoEnvelope(e.categoria).join('", "')}"</p>
                   </div>
                   <div className="text-right">
                     <div className="text-xs text-mute">Disponível</div>
@@ -120,10 +121,17 @@ export default async function Assessor({ searchParams }: { searchParams: { mes?:
                   )}
 
                   <FormReset action={retirarEnvelope} className="flex flex-wrap items-center gap-2 pt-1">
-                    <input type="hidden" name="categoria" value={e.categoria} />
+                    {categoriasDoEnvelope(e.categoria).length > 1 ? (
+                      <select name="categoria" className="campo w-auto py-1.5 text-sm" aria-label="Para que foi o gasto">
+                        <option value={e.categoria}>Reserva / outros</option>
+                        {categoriasDoEnvelope(e.categoria).slice(1).map((c) => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    ) : (
+                      <input type="hidden" name="categoria" value={e.categoria} />
+                    )}
                     <input type="hidden" name="nome" value={e.nome} />
                     <input name="valor" required inputMode="decimal" placeholder="R$" className="campo w-24 py-1.5 text-sm" aria-label={`Valor retirado de ${e.nome}`} />
-                    <input name="descricao" placeholder={e.categoria === "Pró-labore" ? "Retirada de pró-labore" : `Ex: compra de ${e.nome.toLowerCase()}`} className="campo min-w-[120px] flex-1 py-1.5 text-sm" aria-label="Descrição" />
+                    <input name="descricao" placeholder={e.categoria === "Pró-labore" ? "Retirada de pró-labore" : e.categoria === "Caixa da empresa" ? "Ex: parcela da impressora, conta de luz" : `Ex: compra de ${e.nome.toLowerCase()}`} className="campo min-w-[120px] flex-1 py-1.5 text-sm" aria-label="Descrição" />
                     <input name="data" type="date" defaultValue={hj} className="campo w-[140px] py-1.5 text-sm" aria-label="Data" />
                     <Enviar className="botao py-1.5 text-sm">Retirar</Enviar>
                   </FormReset>

@@ -14,6 +14,13 @@ export async function carregarEnvelopes(): Promise<Envelope[] | null> {
 // Categorias de gasto que têm "preço de reposição" (compra de material)
 const REPOSICAO = ["Bobina/Vinil", "Tinta"];
 
+// Envelopes que também absorvem outras categorias de Gastos.
+// O "Caixa da empresa" paga as contas fixas e as parcelas das máquinas.
+export const CATEGORIAS_EXTRAS: Record<string, string[]> = {
+  "Caixa da empresa": ["Contas fixas", "Parcelas de equipamento"],
+};
+export const categoriasDoEnvelope = (cat: string) => [cat, ...(CATEGORIAS_EXTRAS[cat] ?? [])];
+
 export function montarAssessor(b: Base, envelopes: Envelope[], mes: string) {
   const inicio = b.config.assessor_inicio;
   const fim = ultimoDia(mes);
@@ -42,7 +49,7 @@ export function montarAssessor(b: Base, envelopes: Envelope[], mes: string) {
 
   const gastosPeriodo = b.gastos.filter((g) => dentro(g.data));
   const gastoCat = (cat: string, soMes = false) =>
-    gastosPeriodo.filter((g) => g.categoria === cat && (!soMes || mesDe(g.data) === mes)).reduce((s, g) => s + g.valor, 0);
+    gastosPeriodo.filter((g) => categoriasDoEnvelope(cat).includes(g.categoria) && (!soMes || mesDe(g.data) === mes)).reduce((s, g) => s + g.valor, 0);
 
   // Preço de reposição = média das últimas 3 compras da categoria (qualquer data)
   const reposicao = (cat: string) => {
@@ -63,14 +70,14 @@ export function montarAssessor(b: Base, envelopes: Envelope[], mes: string) {
       gastoMes: gastoCat(e.categoria, true),
       reposicao: reposicao(e.categoria),
       ultimas: gastosPeriodo
-        .filter((g) => g.categoria === e.categoria)
+        .filter((g) => categoriasDoEnvelope(e.categoria).includes(g.categoria))
         .sort((x, y) => y.data.localeCompare(x.data) || y.id - x.id)
         .slice(0, 4),
     };
   });
 
   // Gastos que saíram do caixa sem envelope
-  const cats = new Set([...envelopes.map((e) => e.categoria), "Impostos (DAS)"]);
+  const cats = new Set([...envelopes.flatMap((e) => categoriasDoEnvelope(e.categoria)), "Impostos (DAS)"]);
   const foraLista = gastosPeriodo.filter((g) => !cats.has(g.categoria));
   const fora = foraLista.reduce((s, g) => s + g.valor, 0);
 

@@ -90,7 +90,7 @@ export default async function Config() {
           <p className="mb-4 text-xs text-mute">Quanto de cada real recebido vai para cada envelope.</p>
           {envelopes ? (
             <form action={salvarAssessor} className="space-y-4">
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
                 {envelopes.map((e) => (
                   <div key={e.id}>
                     <input type="hidden" name="env_id" value={e.id} />
