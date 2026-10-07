@@ -6,7 +6,8 @@ import { carregar } from "@/lib/data";
 import { carregarEnvelopes, montarAssessor } from "@/lib/assessor";
 import { brl, dataBR, hoje, mesAtual, mesLongo } from "@/lib/format";
 import { retirarEnvelope, excluirGasto, atualizarGasto } from "../actions";
-import Editar, { Campo, paraCampo } from "@/components/Editar";
+import Editar, { Campo } from "@/components/Editar";
+import { paraCampo } from "@/lib/format";
 import Excluir from "@/components/Excluir";
 
 export const dynamic = "force-dynamic";

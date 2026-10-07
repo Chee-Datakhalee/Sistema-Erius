@@ -8,7 +8,8 @@ import { carregarEnvelopes } from "@/lib/assessor";
 import { brl } from "@/lib/format";
 import { CATEGORIAS_GASTO } from "@/lib/constants";
 import { salvarConfig, criarFixa, alternarFixa, excluirFixa, salvarPreco, salvarAssessor, atualizarFixa } from "../actions";
-import Editar, { Campo, paraCampo } from "@/components/Editar";
+import Editar, { Campo } from "@/components/Editar";
+import { paraCampo } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 

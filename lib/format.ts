@@ -28,3 +28,6 @@ export const ultimoDia = (mes: string) => {
   const [a, m] = mes.split("-").map(Number);
   return `${mes}-${String(new Date(a, m, 0).getDate()).padStart(2, "0")}`;
 };
+
+// Número pra campo de formulário: 362.8 → "362,80"
+export const paraCampo = (v: number) => Number(v || 0).toFixed(2).replace(".", ",");

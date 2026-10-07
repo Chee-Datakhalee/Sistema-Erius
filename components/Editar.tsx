@@ -63,4 +63,3 @@ export function Campo({
   );
 }
 
-export const paraCampo = (v: number) => v.toFixed(2).replace(".", ",");

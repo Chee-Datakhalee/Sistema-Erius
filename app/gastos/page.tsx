@@ -1,6 +1,7 @@
 import Cabecalho from "@/components/Cabecalho";
 import Excluir from "@/components/Excluir";
-import Editar, { Campo, paraCampo } from "@/components/Editar";
+import Editar, { Campo } from "@/components/Editar";
+import { paraCampo } from "@/lib/format";
 import Enviar from "@/components/Enviar";
 import FormReset from "@/components/FormReset";
 import { carregar } from "@/lib/data";
