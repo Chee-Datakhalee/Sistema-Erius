@@ -1,5 +1,5 @@
 import "server-only";
-import { carregar, montarDashboard, carregarOS, carregarOrcamentos, pagoPorPedido } from "./data";
+import { carregar, montarDashboard, carregarOS, carregarOrcamentos, pagoPorPedido, cobrado } from "./data";
 import { carregarEnvelopes, montarAssessor } from "./assessor";
 import { brl, hoje, mesAtual, mesDe, mesLongo, somaMes, ultimoDia } from "./format";
 
@@ -30,7 +30,7 @@ export async function montarRelatorio(mes: string) {
   });
   const novos = [...primeiro.values()].filter((dt) => mesDe(dt) === mes).length;
   const pagos = pagoPorPedido(b.pagamentos);
-  const pendMes = a.ped.map((p) => p.valor_total - (pagos.get(p.id) ?? 0)).filter((s) => s > 0.005);
+  const pendMes = a.ped.map((p) => cobrado(p) - (pagos.get(p.id) ?? 0)).filter((s) => s > 0.005);
   const aReceberMes = pendMes.reduce((t, s) => t + s, 0);
 
   // Produção (OS com prazo no mês)
@@ -46,15 +46,15 @@ export async function montarRelatorio(mes: string) {
 
   // Tráfego
   const roas = ass?.roas ?? null;
-  const envTraf = ass?.envelopes.find((e) => e.categoria === "Anúncios (Ads)");
-  const envBob = ass?.envelopes.find((e) => e.categoria === "Bobina/Vinil");
+  const envTraf = ass?.envelopes.find((e) => e.tipo === "trafego");
+ const envBob = ass?.envelopes.find((e) => e.tipo === "reposicao");
 
   // Plano pro próximo mês (regras)
   const recs: string[] = [];
   let meta: string | null = null;
   if (envBob?.reposicao && envBob.saldo < envBob.reposicao.media && envBob.pct > 0) {
     const falta = envBob.reposicao.media - Math.max(0, envBob.saldo);
-    meta = `Receber ${brl(falta / (envBob.pct / 100))} pra juntar o que falta da próxima bobina (${brl(falta)}).`;
+    meta = `Receber ${brl(falta / (envBob.pct / 100))} pra juntar o que falta da próxima compra de material (${brl(falta)}).`;
   } else if (a.faturamento > 0) {
     meta = `Vender ${brl(a.faturamento * 1.1)} (10% acima deste mês).`;
   }
