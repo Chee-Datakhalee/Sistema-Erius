@@ -1,255 +1,209 @@
-import "server-only";
-import { db } from "./supabase";
-import { mesDe, somaMes, mesCurto } from "./format";
-import { LIMITES, NAO_DESPESA } from "./constants";
+import Cabecalho from "@/components/Cabecalho";
+import Excluir from "@/components/Excluir";
+import Editar, { Campo } from "@/components/Editar";
+import { paraCampo } from "@/lib/format";
+import Enviar from "@/components/Enviar";
+import FormReset from "@/components/FormReset";
+import PainelCobranca from "@/components/PainelCobranca";
+import { carregar, pagoPorPedido, statusPedido, cobrado } from "@/lib/data";
+import { brl, dataBR, hoje, mesAtual, mesDe, mesLongo, num } from "@/lib/format";
+import { SERVICOS, FORMAS } from "@/lib/constants";
+import { criarPedido, registrarPagamento, excluirPedido, excluirPagamento, atualizarPedido, atualizarPagamento } from "../actions";
 
-export type Pedido = {
-  id: string; cliente: string; servico: string; descricao: string | null; quantidade: number;
-  data: string; prioridade: boolean; valor_base: number; adicional_prioridade: number;
-  valor_total: number; forma_pagto: string | null; observacoes: string | null;
-  valor_envio: number; // frete repassado ao cliente: entra no que ele paga, mas NÃO no faturamento
+export const dynamic = "force-dynamic";
+
+const corStatus: Record<string, string> = {
+  Pago: "bg-verde/15 text-verde",
+  Parcial: "bg-amarelo/15 text-amarelo",
+  "Não pago": "bg-vermelho/15 text-vermelho",
 };
-export type Pagamento = { id: string; pedido_id: string; data: string; valor: number; forma: string | null };
-export type Gasto = {
-  id: string; data: string; descricao: string; categoria: string; parcela_atual: number | null;
-  parcela_total: number | null; valor: number; observacoes: string | null;
-};
-export type Fixa = { id: string; nome: string; categoria: string; valor: number; ativo: boolean };
-export type Config = { caixa_inicial: number; adicional_prioridade: number; markup_revenda: number; das_mensal: number; assessor_inicio: string };
-import type { Produto } from "./produtos";
 
-const n = (v: unknown) => Number(v ?? 0);
-
-async function q<T>(p: PromiseLike<{ data: unknown; error: { message: string } | null }>): Promise<T[]> {
-  const { data, error } = await p;
-  if (error) throw new Error(error.message);
-  return (data ?? []) as T[];
-}
-
-export async function carregar() {
-  const s = db();
-  const [pedidos, pagamentos, gastos, fixas, cfg] = await Promise.all([
-    q<Pedido>(s.from("pedidos").select("*").order("data", { ascending: false }).order("id", { ascending: false })),
-    q<Pagamento>(s.from("pagamentos").select("*").order("data", { ascending: false })),
-    q<Gasto>(s.from("gastos").select("*").order("data", { ascending: false }).order("id", { ascending: false })),
-    q<Fixa>(s.from("despesas_fixas").select("*").order("id")),
-    q<Config>(s.from("config").select("*")),
-  ]);
-  pedidos.forEach((p) => { p.valor_base = n(p.valor_base); p.valor_total = n(p.valor_total); p.adicional_prioridade = n(p.adicional_prioridade); p.valor_envio = n(p.valor_envio); });
-  pagamentos.forEach((p) => (p.valor = n(p.valor)));
-  gastos.forEach((g) => (g.valor = n(g.valor)));
-  fixas.forEach((f) => (f.valor = n(f.valor)));
-  const config: Config = cfg[0]
-    ? {
-        caixa_inicial: n(cfg[0].caixa_inicial), adicional_prioridade: n(cfg[0].adicional_prioridade), markup_revenda: n(cfg[0].markup_revenda),
-        das_mensal: n(cfg[0].das_mensal), assessor_inicio: cfg[0].assessor_inicio ?? new Date().toISOString().slice(0, 10),
-      }
-    : { caixa_inicial: 0, adicional_prioridade: 0, markup_revenda: 30, das_mensal: 0, assessor_inicio: new Date().toISOString().slice(0, 10) };
-  return { pedidos, pagamentos, gastos, fixas, config };
-}
-
-export type Base = Awaited<ReturnType<typeof carregar>>;
-
-export function pagoPorPedido(pagamentos: Pagamento[]) {
-  const m = new Map<string, number>();
-  pagamentos.forEach((p) => m.set(p.pedido_id, (m.get(p.pedido_id) ?? 0) + p.valor));
-  return m;
-}
-
-/** O que o cliente deve pagar no pedido: serviços (faturamento) + envio, se houver. */
-export const cobrado = (p: { valor_total: number; valor_envio?: number }) => p.valor_total + (p.valor_envio ?? 0);
-
-export function statusPedido(total: number, pago: number) {
-  if (pago <= 0) return "Não pago";
-  if (pago + 0.005 < total) return "Parcial";
-  return "Pago";
-}
-
-function resumoMes(b: Base, mes: string) {
-  const ped = b.pedidos.filter((p) => mesDe(p.data) === mes);
-  const gasTodos = b.gastos.filter((g) => mesDe(g.data) === mes);
-  const gas = gasTodos.filter((g) => !NAO_DESPESA.includes(g.categoria));
-  const retiradas = gasTodos.filter((g) => NAO_DESPESA.includes(g.categoria)).reduce((s, g) => s + g.valor, 0);
-  const pag = b.pagamentos.filter((p) => mesDe(p.data) === mes);
-  const faturamento = ped.reduce((s, p) => s + p.valor_total, 0);
-  const despesas = gas.reduce((s, g) => s + g.valor, 0);
-  const recebido = pag.reduce((s, p) => s + p.valor, 0);
-  return {
-    mes, ped, gas, faturamento, despesas, recebido,
-    lucro: faturamento - despesas,
-    saldoCaixa: recebido - despesas - retiradas,
-    pedidos: ped.length,
-    clientes: new Set(ped.map((p) => p.cliente.trim().toLowerCase())).size,
-  };
-}
-
-const variacao = (a: number, b: number) => (b === 0 ? null : (a - b) / Math.abs(b));
-
-export function montarDashboard(b: Base, mes: string) {
-  const atual = resumoMes(b, mes);
-  const ant = resumoMes(b, somaMes(mes, -1));
-
-  const meses = Array.from({ length: 6 }, (_, i) => somaMes(mes, i - 5));
-  const serie = meses.map((m) => {
-    const r = resumoMes(b, m);
-    return { mes: mesCurto(m), faturamento: r.faturamento, despesas: r.despesas, lucro: r.lucro, caixa: r.saldoCaixa };
-  });
-
-  // Despesas por categoria
-  const cat = new Map<string, number>();
-  atual.gas.forEach((g) => cat.set(g.categoria, (cat.get(g.categoria) ?? 0) + g.valor));
-  const categorias = [...cat.entries()]
-    .map(([nome, valor]) => ({ nome, valor, pct: atual.despesas ? valor / atual.despesas : 0 }))
-    .sort((a, b) => b.valor - a.valor);
-
-  // Top clientes
-  const cli = new Map<string, number>();
-  atual.ped.forEach((p) => cli.set(p.cliente, (cli.get(p.cliente) ?? 0) + p.valor_total));
-  const clientesOrd = [...cli.entries()].sort((a, b) => b[1] - a[1]);
-  const top = clientesOrd.slice(0, 5).map(([nome, valor]) => ({ nome, valor, pct: atual.faturamento ? valor / atual.faturamento : 0 }));
-  const outrosValor = clientesOrd.slice(5).reduce((s, [, v]) => s + v, 0);
-
-  // Produtos
-  const prod = new Map<string, number>();
-  atual.ped.forEach((p) => prod.set(p.servico, (prod.get(p.servico) ?? 0) + p.valor_total));
-  const produtos = [...prod.entries()]
-    .map(([nome, valor]) => ({ nome, valor, pct: atual.faturamento ? valor / atual.faturamento : 0 }))
-    .sort((a, b) => b.valor - a.valor);
-
-  // Totais históricos
+export default async function Clientes({ searchParams }: { searchParams: { mes?: string } }) {
+  const mes = /^\d{4}-\d{2}$/.test(searchParams.mes ?? "") ? searchParams.mes! : mesAtual();
+  const b = await carregar();
   const pagos = pagoPorPedido(b.pagamentos);
-  const totalRecebido = b.pagamentos.reduce((s, p) => s + p.valor, 0);
-  const totalGasto = b.gastos.reduce((s, g) => s + g.valor, 0);
-  const pendentes = b.pedidos
-    .map((p) => ({ p, saldo: cobrado(p) - (pagos.get(p.id) ?? 0) }))
-    .filter((x) => x.saldo > 0.005);
-  const aReceber = pendentes.reduce((s, x) => s + x.saldo, 0);
-  const caixaAtual = b.config.caixa_inicial + totalRecebido - totalGasto;
+  const doMes = b.pedidos.filter((p) => mesDe(p.data) === mes);
+  const abertos = b.pedidos.filter((p) => cobrado(p) - (pagos.get(p.id) ?? 0) > 0.005);
+  const nomes = [...new Set(b.pedidos.map((p) => p.cliente))].sort();
 
-  const margem = atual.faturamento ? atual.lucro / atual.faturamento : 0;
-  const ticket = atual.pedidos ? atual.faturamento / atual.pedidos : 0;
-
-  // Insights por regra
-  const insights: { tipo: "ok" | "alerta" | "ruim"; texto: string }[] = [];
-  const vLucro = variacao(atual.lucro, ant.lucro);
-  if (atual.faturamento === 0 && atual.despesas === 0) {
-    insights.push({ tipo: "alerta", texto: "Nenhum lançamento neste mês ainda." });
-  } else if (atual.lucro < 0) {
-    insights.push({ tipo: "ruim", texto: `Mês no prejuízo: faltam ${fmt(-atual.lucro)} de faturamento para cobrir as despesas.` });
-  } else {
-    insights.push({ tipo: "ok", texto: `Margem de lucro de ${(margem * 100).toFixed(1).replace(".", ",")}% no mês.` });
-  }
-  if (vLucro !== null && atual.lucro > 0) {
-    insights.push({ tipo: vLucro >= 0 ? "ok" : "alerta", texto: `Lucro ${vLucro >= 0 ? "cresceu" : "caiu"} ${Math.abs(vLucro * 100).toFixed(0)}% em relação ao mês anterior.` });
-  }
-  categorias.forEach((c) => {
-    const l = LIMITES[c.nome];
-    if (!l) return;
-    if (c.pct >= l.vermelho)
-      insights.push({ tipo: "ruim", texto: `${c.nome} está em ${(c.pct * 100).toFixed(0)}% das despesas (limite ${(l.vermelho * 100).toFixed(0)}%).` });
-    else if (c.pct >= l.amarelo)
-      insights.push({ tipo: "alerta", texto: `${c.nome} em ${(c.pct * 100).toFixed(0)}% das despesas, perto do limite.` });
+  // primeira compra de cada cliente (por nome, no histórico inteiro) → marca "Novo"
+  const primeiraCompra = new Map<string, number>();
+  [...b.pedidos].sort((a, c) => a.data.localeCompare(c.data) || a.id - c.id).forEach((p) => {
+    const chave = p.cliente.trim().toLowerCase();
+    if (!primeiraCompra.has(chave)) primeiraCompra.set(chave, p.id);
   });
-  if (aReceber > 0)
-    insights.push({ tipo: "alerta", texto: `${fmt(aReceber)} a receber de ${pendentes.length} pedido${pendentes.length > 1 ? "s" : ""}. Cobre os saldos em aberto.` });
-  if (ticket > 0) insights.push({ tipo: "ok", texto: `Ticket médio de ${fmt(ticket)} por pedido.` });
-  if (caixaAtual < 0) insights.push({ tipo: "ruim", texto: `Caixa negativo: ${fmt(caixaAtual)}.` });
+  const itensCobranca = abertos
+    .map((p) => ({
+      pedido: p,
+      pago: pagos.get(p.id) ?? 0,
+      saldo: cobrado(p) - (pagos.get(p.id) ?? 0),
+      novo: primeiraCompra.get(p.cliente.trim().toLowerCase()) === p.id,
+    }))
+    .sort((a, c) => c.saldo - a.saldo);
 
-  const fixasAtivas = b.fixas.filter((f) => f.ativo);
+  return (
+    <>
+      <Cabecalho titulo="Clientes e Pedidos" sub={`Pedidos de ${mesLongo(mes)}`} mes={mes} />
+      <div className="space-y-4 p-4 lg:p-5">
+        <section className="painel p-5">
+          <h2 className="titulo mb-4">Novo pedido</h2>
+          <FormReset action={criarPedido} className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
+            <div className="col-span-2">
+              <label className="rotulo" htmlFor="cliente">Cliente</label>
+              <input id="cliente" name="cliente" list="lista-clientes" required className="campo" placeholder="Nome do cliente" />
+              <datalist id="lista-clientes">{nomes.map((n) => <option key={n} value={n} />)}</datalist>
+            </div>
+            <div>
+              <label className="rotulo" htmlFor="servico">Serviço</label>
+              <select id="servico" name="servico" className="campo">{SERVICOS.map((s) => <option key={s}>{s}</option>)}</select>
+            </div>
+            <div className="col-span-2 md:col-span-1 xl:col-span-2">
+              <label className="rotulo" htmlFor="descricao">Descrição</label>
+              <input id="descricao" name="descricao" className="campo" placeholder="Ex: 5x5 fosco" />
+            </div>
+            <div>
+              <label className="rotulo" htmlFor="quantidade">Quantidade</label>
+              <input id="quantidade" name="quantidade" inputMode="numeric" className="campo" placeholder="500" />
+            </div>
+            <div>
+              <label className="rotulo" htmlFor="data">Data</label>
+              <input id="data" name="data" type="date" defaultValue={hoje()} className="campo" />
+            </div>
+            <div>
+              <label className="rotulo" htmlFor="valor_base">Valor (R$)</label>
+              <input id="valor_base" name="valor_base" inputMode="decimal" required className="campo" placeholder="190,00" />
+            </div>
+            <div>
+              <label className="rotulo" htmlFor="valor_pago">Já recebeu (R$)</label>
+              <input id="valor_pago" name="valor_pago" inputMode="decimal" className="campo" placeholder="Sinal, se houver" />
+            </div>
+            <div>
+              <label className="rotulo" htmlFor="forma_pagto">Pagamento</label>
+              <select id="forma_pagto" name="forma_pagto" className="campo">{FORMAS.map((f) => <option key={f}>{f}</option>)}</select>
+            </div>
+            <label className="flex items-end gap-2 pb-2 text-sm">
+              <input type="checkbox" name="prioridade" className="h-4 w-4 accent-verde" /> Prioridade 48h (+{brl(b.config.adicional_prioridade)})
+            </label>
+            <div className="col-span-2 md:col-span-3 xl:col-span-4">
+              <label className="rotulo" htmlFor="observacoes">Observações</label>
+              <input id="observacoes" name="observacoes" className="campo" />
+            </div>
+            <div className="col-span-2 flex items-end md:col-span-1 xl:col-span-2"><Enviar>Salvar pedido</Enviar></div>
+          </FormReset>
+        </section>
 
-  return {
-    atual, ant, serie, categorias, top, outrosValor, produtos, insights,
-    aReceber, caixaAtual, margem, ticket, fixasAtivas,
-    totalFixas: fixasAtivas.reduce((s, f) => s + f.valor, 0),
-    var: {
-      faturamento: variacao(atual.faturamento, ant.faturamento),
-      despesas: variacao(atual.despesas, ant.despesas),
-      lucro: vLucro,
-      clientes: variacao(atual.clientes, ant.clientes),
-      pedidos: variacao(atual.pedidos, ant.pedidos),
-    },
-  };
+        <div>
+          <h2 className="titulo mb-3">Quem falta pagar</h2>
+          <PainelCobranca itens={itensCobranca} />
+        </div>
+
+        <details className="painel overflow-x-auto p-5">
+          <summary className="titulo cursor-pointer">
+            Ver todos os pedidos do mês <span className="text-sm font-normal text-mute">({doMes.length} pedidos · {brl(doMes.reduce((s, p) => s + p.valor_total, 0))})</span>
+          </summary>
+          <div className="mt-4">
+            <TabelaPedidos lista={doMes} pagos={pagos} b={b} />
+          </div>
+        </details>
+      </div>
+    </>
+  );
 }
 
-function fmt(v: number) {
-  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
-}
-
-export async function carregarProdutos() {
-  const rows = await q<Produto>(db().from("produtos").select("*").eq("ativo", true).order("nome"));
-  return rows.map((r) => ({ ...r, preco: n(r.preco) }));
-}
-
-export async function carregarPadroes() {
-  const { data } = await db().from("config").select("prazo_padrao, pagamento_padrao, validade_dias, adicional_prioridade").maybeSingle();
-  return {
-    prazo: (data?.prazo_padrao as string | null) ?? "",
-    pagamento: (data?.pagamento_padrao as string | null) ?? "",
-    validade: Number(data?.validade_dias ?? 15),
-    adicional: Number(data?.adicional_prioridade ?? 0),
-  };
-}
-export type Padroes = Awaited<ReturnType<typeof carregarPadroes>>;
-
-export type OrcamentoItem = {
-  id: string; orcamento_id: string; tipo: "etiqueta" | "manual"; servico: string;
-  tamanho: string | null; quantidade: number; descricao: string | null;
-  valor_unitario: number; valor_total: number; ordem: number;
-  medidas?: string | null; // lista de medidas (modo metragem total)
-};
-export type Orcamento = {
-  id: string; numero: number; cliente: string; data: string; validade_dias: number;
-  status: "pendente" | "aprovado" | "recusado"; prazo: string | null;
-  pagamento: string | null; observacoes: string | null;
-  desconto_a_vista: number | null; bonificacao: string | null; producao_prioritaria: boolean;
-  urgencia_tipo?: "valor" | "percentual"; urgencia_valor?: number | null;
-  mostrar_prazo?: boolean; mostrar_arte?: boolean;
-  envio?: boolean; valor_envio?: number; // envio (Correios): soma no total do cliente, não aparece no PDF
-};
-
-export async function carregarOrcamentos() {
-  const s = db();
-  const [orcs, itensRaw] = await Promise.all([
-    q<Orcamento>(s.from("orcamentos").select("*").order("data", { ascending: false }).order("id", { ascending: false })),
-    q<OrcamentoItem>(s.from("orcamento_itens").select("*").order("ordem")),
-  ]);
-  itensRaw.forEach((i) => { i.valor_unitario = n(i.valor_unitario); i.valor_total = n(i.valor_total); });
-  orcs.forEach((o) => {
-    o.desconto_a_vista = o.desconto_a_vista != null ? n(o.desconto_a_vista) : null;
-    o.urgencia_valor = o.urgencia_valor != null ? n(o.urgencia_valor) : null;
-    o.envio = !!o.envio;
-    o.valor_envio = n(o.valor_envio);
-  });
-  const itensPorOrc = new Map<string, OrcamentoItem[]>();
-  itensRaw.forEach((i) => {
-    if (!itensPorOrc.has(i.orcamento_id)) itensPorOrc.set(i.orcamento_id, []);
-    itensPorOrc.get(i.orcamento_id)!.push(i);
-  });
-  return orcs.map((o) => ({ ...o, itens: itensPorOrc.get(o.id) ?? [] }));
-}
-
-export type StatusOS = "aberta" | "producao" | "pronta" | "entregue";
-export type OSItem = {
-  id: string; os_id: string; servico: string; descricao: string;
-  quantidade: number; valor_unitario: number; valor_total: number; ordem: number;
-};
-export type OS = {
-  id: string; numero: number; cliente: string; telefone: string | null; data: string; prazo_entrega: string | null;
-  status: StatusOS; forma_pagto: string | null; observacoes: string | null; pedido_id: string | null;
-  orcamento_id?: string | null;
-};
-
-export async function carregarOS() {
-  const s = db();
-  const [ordens, itensRaw] = await Promise.all([
-    q<OS>(s.from("ordens_servico").select("*").order("data", { ascending: false }).order("id", { ascending: false })),
-    q<OSItem>(s.from("os_itens").select("*").order("ordem")),
-  ]);
-  itensRaw.forEach((i) => { i.valor_unitario = n(i.valor_unitario); i.valor_total = n(i.valor_total); });
-  const porOS = new Map<string, OSItem[]>();
-  itensRaw.forEach((i) => {
-    if (!porOS.has(i.os_id)) porOS.set(i.os_id, []);
-    porOS.get(i.os_id)!.push(i);
-  });
-  return ordens.map((o) => ({ ...o, itens: porOS.get(o.id) ?? [] }));
+function TabelaPedidos({ lista, pagos, b }: { lista: Awaited<ReturnType<typeof carregar>>["pedidos"]; pagos: Map<number, number>; b: Awaited<ReturnType<typeof carregar>> }) {
+  if (!lista.length) return <p className="text-sm text-mute">Nada por aqui.</p>;
+  return (
+    <table className="tabela min-w-[980px]">
+      <thead>
+        <tr>
+          <th>Data</th><th>Cliente</th><th>Serviço</th><th className="text-right">Qtd</th>
+          <th className="text-right">Total</th><th className="text-right">Pago</th><th className="text-right">Saldo</th>
+          <th>Status</th><th className="w-[280px]">Receber</th><th />
+        </tr>
+      </thead>
+      <tbody>
+        {lista.map((p) => {
+          const pago = pagos.get(p.id) ?? 0;
+          const saldo = cobrado(p) - pago;
+          const st = statusPedido(cobrado(p), pago);
+          const pgs = b.pagamentos.filter((x) => x.pedido_id === p.id);
+          return (
+            <tr key={p.id}>
+              <td className="whitespace-nowrap text-mute">{dataBR(p.data)}</td>
+              <td>
+                <div className="font-medium">{p.cliente}</div>
+                {p.observacoes && <div className="text-xs text-mute">{p.observacoes}</div>}
+              </td>
+              <td>
+                {p.servico}
+                {p.descricao && <span className="text-mute"> · {p.descricao}</span>}
+                {p.prioridade && <span className="ml-2 rounded bg-roxo/20 px-1.5 py-0.5 text-[11px] text-roxo">48h</span>}
+              </td>
+              <td className="text-right">{num(p.quantidade)}</td>
+              <td className="text-right">
+                {brl(p.valor_total)}
+                {p.valor_envio > 0 && <div className="text-xs text-mute">+ envio {brl(p.valor_envio)}</div>}
+              </td>
+              <td className="text-right">
+                {brl(pago)}
+                {pgs.length > 0 && (
+                  <details className="text-left text-xs text-mute">
+                    <summary className="cursor-pointer text-right">{pgs.length} pgto</summary>
+                    {pgs.map((x) => (
+                      <div key={x.id} className="flex items-center justify-end gap-1">
+                        {dataBR(x.data)} {brl(x.valor)}
+                        <Editar titulo="Editar pagamento" action={atualizarPagamento}>
+                          <input type="hidden" name="id" value={x.id} />
+                          <Campo nome="valor" rotulo="Valor (R$)" valor={paraCampo(x.valor)} decimal />
+                          <Campo nome="data" rotulo="Data" valor={x.data} tipo="date" />
+                          <Campo nome="forma" rotulo="Forma" valor={x.forma ?? "Pix"} opcoes={FORMAS} />
+                        </Editar>
+                        <Excluir action={excluirPagamento} id={x.id} texto="Excluir este pagamento?" />
+                      </div>
+                    ))}
+                  </details>
+                )}
+              </td>
+              <td className={`text-right ${saldo > 0.005 ? "text-amarelo" : "text-mute"}`}>{brl(Math.max(0, saldo))}</td>
+              <td><span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs ${corStatus[st]}`}>{st}</span></td>
+              <td>
+                {saldo > 0.005 ? (
+                  <form action={registrarPagamento} className="flex gap-1.5">
+                    <input type="hidden" name="pedido_id" value={p.id} />
+                    <input name="valor" defaultValue={saldo.toFixed(2).replace(".", ",")} inputMode="decimal" className="campo w-24 py-1" aria-label="Valor recebido" />
+                    <input name="data" type="date" defaultValue={hoje()} className="campo w-[130px] py-1" aria-label="Data" />
+                    <Enviar className="botao2">Receber</Enviar>
+                  </form>
+                ) : (
+                  <span className="text-xs text-mute">Quitado</span>
+                )}
+              </td>
+              <td>
+                <div className="flex items-center">
+                  <Editar titulo="Editar pedido" action={atualizarPedido}>
+                    <input type="hidden" name="id" value={p.id} />
+                    {p.descricao?.startsWith("OS #") && (
+                      <p className="col-span-2 text-xs text-amarelo">Este pedido veio de uma OS. Prefira editar pela aba Ordens de Serviço, pra OS e pedido ficarem iguais.</p>
+                    )}
+                    <Campo nome="cliente" rotulo="Cliente" valor={p.cliente} largo />
+                    <Campo nome="servico" rotulo="Serviço" valor={p.servico} opcoes={SERVICOS} />
+                    <Campo nome="quantidade" rotulo="Quantidade" valor={p.quantidade} />
+                    <Campo nome="descricao" rotulo="Descrição" valor={p.descricao} largo />
+                    <Campo nome="valor_base" rotulo="Valor (R$)" valor={paraCampo(p.valor_base)} decimal />
+                    <Campo nome="data" rotulo="Data" valor={p.data} tipo="date" />
+                    <Campo nome="forma_pagto" rotulo="Pagamento" valor={p.forma_pagto ?? "Pix"} opcoes={FORMAS} />
+                    <label className="flex items-end gap-2 pb-2 text-sm">
+                      <input type="checkbox" name="prioridade" defaultChecked={p.prioridade} className="h-4 w-4 accent-verde" /> Prioridade 48h
+                    </label>
+                    <Campo nome="observacoes" rotulo="Observações" valor={p.observacoes} largo />
+                  </Editar>
+                  <Excluir action={excluirPedido} id={p.id} texto={`Excluir o pedido de ${p.cliente}?`} />
+                </div>
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
 }
