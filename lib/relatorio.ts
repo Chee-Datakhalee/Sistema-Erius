@@ -46,15 +46,15 @@ export async function montarRelatorio(mes: string) {
 
   // Tráfego
   const roas = ass?.roas ?? null;
-  const envTraf = ass?.envelopes.find((e) => e.tipo === "trafego");
- const envBob = ass?.envelopes.find((e) => e.tipo === "reposicao");
+  const envTraf = ass?.envelopes.find((e) => e.categoria === "Anúncios (Ads)");
+  const envBob = ass?.envelopes.find((e) => e.categoria === "Bobina/Vinil");
 
   // Plano pro próximo mês (regras)
   const recs: string[] = [];
   let meta: string | null = null;
   if (envBob?.reposicao && envBob.saldo < envBob.reposicao.media && envBob.pct > 0) {
     const falta = envBob.reposicao.media - Math.max(0, envBob.saldo);
-    meta = `Receber ${brl(falta / (envBob.pct / 100))} pra juntar o que falta da próxima compra de material (${brl(falta)}).`;
+    meta = `Receber ${brl(falta / (envBob.pct / 100))} pra juntar o que falta da próxima bobina (${brl(falta)}).`;
   } else if (a.faturamento > 0) {
     meta = `Vender ${brl(a.faturamento * 1.1)} (10% acima deste mês).`;
   }
