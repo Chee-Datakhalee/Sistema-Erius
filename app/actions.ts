@@ -2,6 +2,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/supabase";
+import { getEmpresa } from "@/lib/empresa";
 import { hoje, mesAtual, ultimoDia } from "@/lib/format";
 
 function valor(v: FormDataEntryValue | null) {
@@ -26,7 +27,7 @@ function tudo() {
 /* ---------- Pedidos ---------- */
 export async function criarPedido(fd: FormData) {
   const s = db();
-  const { data: cfg } = await s.from("config").select("adicional_prioridade").eq("id", 1).single();
+  const { data: cfg } = await s.from("config").select("adicional_prioridade").maybeSingle();
   const { data, error } = await s
     .from("pedidos")
     .insert({
@@ -37,7 +38,7 @@ export async function criarPedido(fd: FormData) {
       data: txt(fd.get("data")) ?? hoje(),
       prioridade: fd.get("prioridade") === "on",
       valor_base: valor(fd.get("valor_base")),
-      adicional_prioridade: Number(cfg?.adicional_prioridade ?? 35),
+      adicional_prioridade: Number(cfg?.adicional_prioridade ?? 0),
       forma_pagto: txt(fd.get("forma_pagto")) ?? "Pix",
       observacoes: txt(fd.get("observacoes")),
     })
@@ -55,7 +56,7 @@ export async function registrarPagamento(fd: FormData) {
   if (v <= 0) return;
   await run(
     db().from("pagamentos").insert({
-      pedido_id: Number(fd.get("pedido_id")),
+      pedido_id: String(fd.get("pedido_id")),
       valor: v,
       data: txt(fd.get("data")) ?? hoje(),
       forma: txt(fd.get("forma")) ?? "Pix",
@@ -65,12 +66,12 @@ export async function registrarPagamento(fd: FormData) {
 }
 
 export async function excluirPedido(fd: FormData) {
-  await run(db().from("pedidos").delete().eq("id", Number(fd.get("id"))));
+  await run(db().from("pedidos").delete().eq("id", String(fd.get("id"))));
   tudo();
 }
 
 export async function excluirPagamento(fd: FormData) {
-  await run(db().from("pagamentos").delete().eq("id", Number(fd.get("id"))));
+  await run(db().from("pagamentos").delete().eq("id", String(fd.get("id"))));
   tudo();
 }
 
@@ -92,7 +93,7 @@ export async function criarGasto(fd: FormData) {
 }
 
 export async function excluirGasto(fd: FormData) {
-  await run(db().from("gastos").delete().eq("id", Number(fd.get("id"))));
+  await run(db().from("gastos").delete().eq("id", String(fd.get("id"))));
   tudo();
 }
 
@@ -126,40 +127,39 @@ export async function criarFixa(fd: FormData) {
 }
 
 export async function alternarFixa(fd: FormData) {
-  await run(db().from("despesas_fixas").update({ ativo: fd.get("ativo") !== "true" }).eq("id", Number(fd.get("id"))));
+  await run(db().from("despesas_fixas").update({ ativo: fd.get("ativo") !== "true" }).eq("id", String(fd.get("id"))));
   tudo();
 }
 
 export async function excluirFixa(fd: FormData) {
-  await run(db().from("despesas_fixas").delete().eq("id", Number(fd.get("id"))));
+  await run(db().from("despesas_fixas").delete().eq("id", String(fd.get("id"))));
   tudo();
 }
 
 /* ---------- Config e preços ---------- */
 export async function salvarConfig(fd: FormData) {
+  const emp = await getEmpresa();
   await run(
     db().from("config").upsert({
-      id: 1,
+      empresa_id: emp.id,
       caixa_inicial: valor(fd.get("caixa_inicial")),
       adicional_prioridade: valor(fd.get("adicional_prioridade")),
       markup_revenda: valor(fd.get("markup_revenda")),
+      validade_dias: Math.round(valor(fd.get("validade_dias"))) || 15,
+      prazo_padrao: txt(fd.get("prazo_padrao")),
+      pagamento_padrao: txt(fd.get("pagamento_padrao")),
     })
   );
   tudo();
 }
 
-export async function salvarPreco(fd: FormData) {
-  await run(
-    db().from("precos").upsert({
-      tamanho: txt(fd.get("tamanho")) ?? "",
-      quantidade: Math.round(valor(fd.get("quantidade"))),
-      preco: valor(fd.get("preco")),
-    })
-  );
-  revalidatePath("/config");
+/* ---------- Orçamentos ---------- */
+// Envio (Correios): soma no total que o cliente paga; não aparece no PDF nem entra no faturamento
+function dadosEnvio(fd: FormData) {
+  const envio = fd.get("envio") === "sim";
+  return { envio, valor_envio: envio ? Math.max(0, valor(fd.get("valor_envio"))) : 0 };
 }
 
-/* ---------- Orçamentos ---------- */
 export async function criarOrcamento(fd: FormData) {
   const s = db();
   const cliente = txt(fd.get("cliente")) ?? "Sem nome";
@@ -167,6 +167,7 @@ export async function criarOrcamento(fd: FormData) {
   const itens = JSON.parse(itensJson) as {
     tipo: "etiqueta" | "manual"; servico: string; tamanho: string | null;
     quantidade: number; descricao: string | null; valor_unitario: number; valor_total: number;
+    medidas?: string | null;
   }[];
   if (!itens.length) throw new Error("Adicione ao menos um item ao orçamento.");
 
@@ -176,12 +177,17 @@ export async function criarOrcamento(fd: FormData) {
       cliente,
       data: txt(fd.get("data")) ?? hoje(),
       validade_dias: Math.round(valor(fd.get("validade_dias"))) || 15,
-      prazo: txt(fd.get("prazo")) ?? "7 dias úteis após aprovação da arte",
+      prazo: txt(fd.get("prazo")) ?? "5 dias úteis após aprovação da arte",
       pagamento: txt(fd.get("pagamento")) ?? "50% na aprovação e 50% na entrega | PIX",
       observacoes: txt(fd.get("observacoes")),
       desconto_a_vista: fd.get("desconto_a_vista") ? valor(fd.get("desconto_a_vista")) : null,
       bonificacao: txt(fd.get("bonificacao")),
       producao_prioritaria: fd.get("producao_prioritaria") === "on",
+      urgencia_tipo: fd.get("urgencia_tipo") === "percentual" ? "percentual" : "valor",
+      urgencia_valor: fd.get("urgencia_valor") ? valor(fd.get("urgencia_valor")) : null,
+      mostrar_prazo: fd.get("mostrar_prazo") === "on",
+      mostrar_arte: fd.get("mostrar_arte") === "on",
+      ...dadosEnvio(fd),
     })
     .select("id")
     .single();
@@ -198,6 +204,7 @@ export async function criarOrcamento(fd: FormData) {
         descricao: it.descricao,
         valor_unitario: it.valor_unitario,
         valor_total: it.valor_total,
+        medidas: it.medidas?.trim() || null,
         ordem: i,
       }))
     )
@@ -209,13 +216,13 @@ export async function criarOrcamento(fd: FormData) {
 
 export async function aprovarOrcamento(fd: FormData) {
   const s = db();
-  const id = Number(fd.get("id"));
+  const id = String(fd.get("id"));
   const { data: orc, error: e1 } = await s.from("orcamentos").select("*").eq("id", id).single();
   if (e1 || !orc) throw new Error(e1?.message ?? "Orçamento não encontrado.");
   const { data: itens, error: e2 } = await s.from("orcamento_itens").select("*").eq("orcamento_id", id).order("ordem");
   if (e2) throw new Error(e2.message);
 
-  const pedidosNovos = (itens ?? []).map((it) => ({
+  const pedidosNovos = (itens ?? []).map((it, i) => ({
     cliente: orc.cliente,
     servico: it.servico,
     descricao: it.descricao ?? (it.tamanho ? `${it.tamanho}` : null),
@@ -226,6 +233,7 @@ export async function aprovarOrcamento(fd: FormData) {
     adicional_prioridade: 0,
     forma_pagto: "Pix",
     observacoes: `Aprovado do orçamento #${id}`,
+    valor_envio: i === 0 && orc.envio ? Number(orc.valor_envio) || 0 : 0, // o envio fica no 1º pedido
   }));
   if (pedidosNovos.length) await run(s.from("pedidos").insert(pedidosNovos));
   await run(s.from("orcamentos").update({ status: "aprovado" }).eq("id", id));
@@ -234,12 +242,12 @@ export async function aprovarOrcamento(fd: FormData) {
 }
 
 export async function recusarOrcamento(fd: FormData) {
-  await run(db().from("orcamentos").update({ status: "recusado" }).eq("id", Number(fd.get("id"))));
+  await run(db().from("orcamentos").update({ status: "recusado" }).eq("id", String(fd.get("id"))));
   revalidatePath("/orcamentos");
 }
 
 export async function excluirOrcamento(fd: FormData) {
-  await run(db().from("orcamentos").delete().eq("id", Number(fd.get("id"))));
+  await run(db().from("orcamentos").delete().eq("id", String(fd.get("id"))));
   revalidatePath("/orcamentos");
 }
 
@@ -248,7 +256,7 @@ type ItemOS = { servico: string; descricao: string; quantidade: number; valor_un
 
 type DadosOS = {
   cliente: string; telefone: string | null; data: string; prazo_entrega: string | null;
-  forma: string; observacoes: string | null; pago: number; orcamento_id?: number | null; itens: ItemOS[];
+  forma: string; observacoes: string | null; pago: number; orcamento_id?: string | null; valor_envio?: number; itens: ItemOS[];
 };
 
 // Cria a OS + o pedido em Clientes + o pagamento de entrada. Usado pela aba OS e pelo orçamento aprovado.
@@ -261,11 +269,11 @@ async function gravarOS(d: DadosOS) {
       cliente: d.cliente, telefone: d.telefone, data: d.data, prazo_entrega: d.prazo_entrega,
       forma_pagto: d.forma, observacoes: d.observacoes, ...(d.orcamento_id ? { orcamento_id: d.orcamento_id } : {}),
     })
-    .select("id")
+    .select("id, numero")
     .single();
   if (error) throw new Error(error.message);
 
-  const numero = String(os.id).padStart(4, "0");
+  const numero = String(os.numero).padStart(4, "0");
   const principal = [...d.itens].sort((a, b) => b.valor_total - a.valor_total)[0];
   const { data: ped, error: e2 } = await s
     .from("pedidos")
@@ -277,9 +285,10 @@ async function gravarOS(d: DadosOS) {
       data: d.data,
       prioridade: false,
       valor_base: total,
+      valor_envio: d.valor_envio ?? 0, // repassado ao cliente; não entra no faturamento
       adicional_prioridade: 0,
       forma_pagto: d.forma,
-      observacoes: d.orcamento_id ? `Do orçamento #${String(d.orcamento_id).padStart(4, "0")}` : d.observacoes,
+      observacoes: d.orcamento_id ? "Gerado a partir de orçamento aprovado" : d.observacoes,
     })
     .select("id")
     .single();
@@ -320,7 +329,7 @@ export async function criarOS(fd: FormData) {
 // Orçamento aprovado → vira OS (que cria o pedido em Clientes)
 export async function aprovarOrcamentoEmOS(fd: FormData) {
   const s = db();
-  const id = Number(fd.get("id"));
+  const id = String(fd.get("id"));
   const { data: orc, error: e1 } = await s.from("orcamentos").select("*").eq("id", id).single();
   if (e1 || !orc) throw new Error(e1?.message ?? "Orçamento não encontrado.");
   if (orc.status === "aprovado") redirect("/os");
@@ -333,9 +342,10 @@ export async function aprovarOrcamentoEmOS(fd: FormData) {
       it.tipo === "etiqueta"
         ? `Etiqueta ${it.tamanho ?? ""}${it.descricao ? ` ${it.descricao}` : ""}`.trim()
         : (it.descricao || it.servico);
+    const desc2 = it.medidas && it.tamanho ? `${desc} (${it.tamanho})` : desc;
     return {
       servico: it.servico || "Outros",
-      descricao: desc,
+      descricao: desc2,
       quantidade: Number(it.quantidade) || 1,
       valor_unitario: Number(it.valor_unitario) || 0,
       valor_total: Number(it.valor_total) || 0, // mantém o total exato do orçamento
@@ -351,6 +361,7 @@ export async function aprovarOrcamentoEmOS(fd: FormData) {
     observacoes: orc.observacoes ?? null,
     pago: valor(fd.get("valor_pago")),
     orcamento_id: id,
+    valor_envio: orc.envio ? Number(orc.valor_envio) || 0 : 0,
     itens,
   });
   await run(s.from("orcamentos").update({ status: "aprovado" }).eq("id", id));
@@ -362,32 +373,37 @@ export async function aprovarOrcamentoEmOS(fd: FormData) {
 export async function statusOS(fd: FormData) {
   const st = String(fd.get("status"));
   if (!["aberta", "producao", "pronta", "entregue"].includes(st)) return;
-  await run(db().from("ordens_servico").update({ status: st }).eq("id", Number(fd.get("id"))));
+  await run(db().from("ordens_servico").update({ status: st }).eq("id", String(fd.get("id"))));
   revalidatePath("/os");
 }
 
 export async function excluirOS(fd: FormData) {
   const s = db();
-  const id = Number(fd.get("id"));
-  const { data: os } = await s.from("ordens_servico").select("pedido_id").eq("id", id).single();
+  const id = String(fd.get("id"));
+  const { data: os } = await s.from("ordens_servico").select("pedido_id, numero").eq("id", id).single();
+  // arquivos de layout saem do Storage junto (as linhas do banco caem em cascata)
+  const { data: arqs } = await s.from("os_arquivos").select("path").eq("os_id", id);
+  if (arqs?.length) await s.storage.from("layouts").remove(arqs.map((a) => a.path as string));
   // apaga o pedido junto (e os pagamentos dele), pra não sobrar cobrança fantasma
   if (os?.pedido_id) await run(s.from("pedidos").delete().eq("id", os.pedido_id));
   await run(s.from("ordens_servico").delete().eq("id", id));
   tudo();
+  revalidatePath("/producao");
 }
 
 /* ---------- Meu Assessor ---------- */
 export async function salvarAssessor(fd: FormData) {
   const s = db();
-  const ids = fd.getAll("env_id").map(Number);
+  const empId = (await getEmpresa()).id;
+  const ids = fd.getAll("env_id").map(String);
   for (const id of ids) {
     await run(s.from("envelopes").update({ pct: valor(fd.get(`pct_${id}`)) }).eq("id", id));
   }
   await run(
     s.from("config").update({
       das_mensal: valor(fd.get("das_mensal")),
-      assessor_inicio: txt(fd.get("assessor_inicio")) ?? "2026-10-01",
-    }).eq("id", 1)
+      assessor_inicio: txt(fd.get("assessor_inicio")) ?? hoje(),
+    }).eq("empresa_id", empId)
   );
   tudo();
 }
@@ -424,7 +440,7 @@ export async function atualizarGasto(fd: FormData) {
     up.parcela_atual = parc ? Number(parc[1]) : null;
     up.parcela_total = parc ? Number(parc[2]) : null;
   }
-  await run(db().from("gastos").update(up).eq("id", Number(fd.get("id"))));
+  await run(db().from("gastos").update(up).eq("id", String(fd.get("id"))));
   tudo();
 }
 
@@ -440,7 +456,7 @@ export async function atualizarPedido(fd: FormData) {
       valor_base: valor(fd.get("valor_base")),
       forma_pagto: txt(fd.get("forma_pagto")) ?? "Pix",
       observacoes: txt(fd.get("observacoes")),
-    }).eq("id", Number(fd.get("id")))
+    }).eq("id", String(fd.get("id")))
   );
   tudo();
 }
@@ -451,7 +467,7 @@ export async function atualizarPagamento(fd: FormData) {
       valor: valor(fd.get("valor")),
       data: txt(fd.get("data")) ?? hoje(),
       forma: txt(fd.get("forma")) ?? "Pix",
-    }).eq("id", Number(fd.get("id")))
+    }).eq("id", String(fd.get("id")))
   );
   tudo();
 }
@@ -462,17 +478,18 @@ export async function atualizarFixa(fd: FormData) {
       nome: txt(fd.get("nome")) ?? "Despesa",
       categoria: txt(fd.get("categoria")) ?? "Contas fixas",
       valor: valor(fd.get("valor")),
-    }).eq("id", Number(fd.get("id")))
+    }).eq("id", String(fd.get("id")))
   );
   tudo();
 }
 
 export async function atualizarOrcamento(fd: FormData) {
   const s = db();
-  const id = Number(fd.get("id"));
+  const id = String(fd.get("id"));
   const itens = JSON.parse(String(fd.get("itens") ?? "[]")) as {
     tipo: "etiqueta" | "manual"; servico: string; tamanho: string | null;
     quantidade: number; descricao: string | null; valor_unitario: number; valor_total: number;
+    medidas?: string | null;
   }[];
   if (!itens.length) throw new Error("O orçamento precisa de ao menos um item.");
   await run(
@@ -485,6 +502,11 @@ export async function atualizarOrcamento(fd: FormData) {
       observacoes: txt(fd.get("observacoes")),
       bonificacao: txt(fd.get("bonificacao")),
       producao_prioritaria: fd.get("producao_prioritaria") === "on",
+      urgencia_tipo: fd.get("urgencia_tipo") === "percentual" ? "percentual" : "valor",
+      urgencia_valor: fd.get("urgencia_valor") ? valor(fd.get("urgencia_valor")) : null,
+      mostrar_prazo: fd.get("mostrar_prazo") === "on",
+      mostrar_arte: fd.get("mostrar_arte") === "on",
+      ...dadosEnvio(fd),
     }).eq("id", id)
   );
   // troca os itens: grava os novos antes de apagar os antigos (não perde nada se der erro)
@@ -493,7 +515,8 @@ export async function atualizarOrcamento(fd: FormData) {
     s.from("orcamento_itens").insert(
       itens.map((it, i) => ({
         orcamento_id: id, tipo: it.tipo, servico: it.servico, tamanho: it.tamanho, quantidade: it.quantidade,
-        descricao: it.descricao, valor_unitario: it.valor_unitario, valor_total: it.valor_total, ordem: i,
+        descricao: it.descricao, valor_unitario: it.valor_unitario, valor_total: it.valor_total,
+        medidas: it.medidas?.trim() || null, ordem: i,
       }))
     )
   );
@@ -505,7 +528,7 @@ export async function atualizarOrcamento(fd: FormData) {
 
 export async function atualizarOS(fd: FormData) {
   const s = db();
-  const id = Number(fd.get("id"));
+  const id = String(fd.get("id"));
   const brutos = JSON.parse(String(fd.get("itens") ?? "[]")) as ItemOS[];
   const itens = brutos
     .filter((i) => String(i.descricao ?? "").trim())
@@ -520,7 +543,7 @@ export async function atualizarOS(fd: FormData) {
   const cliente = txt(fd.get("cliente")) ?? "Sem nome";
   const data = txt(fd.get("data")) ?? hoje();
   const forma = txt(fd.get("forma_pagto")) ?? "Pix";
-  const { data: os, error } = await s.from("ordens_servico").select("pedido_id").eq("id", id).single();
+  const { data: os, error } = await s.from("ordens_servico").select("pedido_id, numero").eq("id", id).single();
   if (error) throw new Error(error.message);
 
   await run(
@@ -538,7 +561,7 @@ export async function atualizarOS(fd: FormData) {
   if (os?.pedido_id) {
     const total = Math.round(itens.reduce((t, i) => t + i.valor_total, 0) * 100) / 100;
     const principal = [...itens].sort((a, b) => b.valor_total - a.valor_total)[0];
-    const numero = String(id).padStart(4, "0");
+    const numero = String(os.numero).padStart(4, "0");
     await run(
       s.from("pedidos").update({
         cliente, servico: principal.servico, data, forma_pagto: forma, valor_base: total, prioridade: false,
