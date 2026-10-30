@@ -5,10 +5,11 @@ import { paraCampo } from "@/lib/format";
 import Enviar from "@/components/Enviar";
 import FormReset from "@/components/FormReset";
 import PainelCobranca from "@/components/PainelCobranca";
-import { carregar, pagoPorPedido, statusPedido } from "@/lib/data";
+import { carregar, pagoPorPedido, statusPedido, cobrado } from "@/lib/data";
 import { brl, dataBR, hoje, mesAtual, mesDe, mesLongo, num } from "@/lib/format";
 import { SERVICOS, FORMAS } from "@/lib/constants";
 import { criarPedido, registrarPagamento, excluirPedido, excluirPagamento, atualizarPedido, atualizarPagamento } from "../actions";
+import { Valor } from "@/components/Privacidade";
 
 export const dynamic = "force-dynamic";
 
@@ -23,12 +24,12 @@ export default async function Clientes({ searchParams }: { searchParams: { mes?:
   const b = await carregar();
   const pagos = pagoPorPedido(b.pagamentos);
   const doMes = b.pedidos.filter((p) => mesDe(p.data) === mes);
-  const abertos = b.pedidos.filter((p) => p.valor_total - (pagos.get(p.id) ?? 0) > 0.005);
+  const abertos = b.pedidos.filter((p) => cobrado(p) - (pagos.get(p.id) ?? 0) > 0.005);
   const nomes = [...new Set(b.pedidos.map((p) => p.cliente))].sort();
 
   // primeira compra de cada cliente (por nome, no histórico inteiro) → marca "Novo"
-  const primeiraCompra = new Map<string, number>();
-  [...b.pedidos].sort((a, c) => a.data.localeCompare(c.data) || a.id - c.id).forEach((p) => {
+  const primeiraCompra = new Map<string, string>();
+  [...b.pedidos].sort((a, c) => a.data.localeCompare(c.data) || a.id.localeCompare(c.id)).forEach((p) => {
     const chave = p.cliente.trim().toLowerCase();
     if (!primeiraCompra.has(chave)) primeiraCompra.set(chave, p.id);
   });
@@ -36,7 +37,7 @@ export default async function Clientes({ searchParams }: { searchParams: { mes?:
     .map((p) => ({
       pedido: p,
       pago: pagos.get(p.id) ?? 0,
-      saldo: p.valor_total - (pagos.get(p.id) ?? 0),
+      saldo: cobrado(p) - (pagos.get(p.id) ?? 0),
       novo: primeiraCompra.get(p.cliente.trim().toLowerCase()) === p.id,
     }))
     .sort((a, c) => c.saldo - a.saldo);
@@ -82,7 +83,7 @@ export default async function Clientes({ searchParams }: { searchParams: { mes?:
               <select id="forma_pagto" name="forma_pagto" className="campo">{FORMAS.map((f) => <option key={f}>{f}</option>)}</select>
             </div>
             <label className="flex items-end gap-2 pb-2 text-sm">
-              <input type="checkbox" name="prioridade" className="h-4 w-4 accent-verde" /> Prioridade 48h (+{brl(b.config.adicional_prioridade)})
+              <input type="checkbox" name="prioridade" className="h-4 w-4 accent-verde" /> Prioridade 48h (+<Valor>{brl(b.config.adicional_prioridade)}</Valor>)
             </label>
             <div className="col-span-2 md:col-span-3 xl:col-span-4">
               <label className="rotulo" htmlFor="observacoes">Observações</label>
@@ -99,7 +100,7 @@ export default async function Clientes({ searchParams }: { searchParams: { mes?:
 
         <details className="painel overflow-x-auto p-5">
           <summary className="titulo cursor-pointer">
-            Ver todos os pedidos do mês <span className="text-sm font-normal text-mute">({doMes.length} pedidos · {brl(doMes.reduce((s, p) => s + p.valor_total, 0))})</span>
+            Ver todos os pedidos do mês <span className="text-sm font-normal text-mute">({doMes.length} pedidos · <Valor>{brl(doMes.reduce((s, p) => s + p.valor_total, 0))}</Valor>)</span>
           </summary>
           <div className="mt-4">
             <TabelaPedidos lista={doMes} pagos={pagos} b={b} />
@@ -110,7 +111,7 @@ export default async function Clientes({ searchParams }: { searchParams: { mes?:
   );
 }
 
-function TabelaPedidos({ lista, pagos, b }: { lista: Awaited<ReturnType<typeof carregar>>["pedidos"]; pagos: Map<number, number>; b: Awaited<ReturnType<typeof carregar>> }) {
+function TabelaPedidos({ lista, pagos, b }: { lista: Awaited<ReturnType<typeof carregar>>["pedidos"]; pagos: Map<string, number>; b: Awaited<ReturnType<typeof carregar>> }) {
   if (!lista.length) return <p className="text-sm text-mute">Nada por aqui.</p>;
   return (
     <table className="tabela min-w-[980px]">
@@ -124,8 +125,8 @@ function TabelaPedidos({ lista, pagos, b }: { lista: Awaited<ReturnType<typeof c
       <tbody>
         {lista.map((p) => {
           const pago = pagos.get(p.id) ?? 0;
-          const saldo = p.valor_total - pago;
-          const st = statusPedido(p.valor_total, pago);
+          const saldo = cobrado(p) - pago;
+          const st = statusPedido(cobrado(p), pago);
           const pgs = b.pagamentos.filter((x) => x.pedido_id === p.id);
           return (
             <tr key={p.id}>
@@ -140,15 +141,18 @@ function TabelaPedidos({ lista, pagos, b }: { lista: Awaited<ReturnType<typeof c
                 {p.prioridade && <span className="ml-2 rounded bg-roxo/20 px-1.5 py-0.5 text-[11px] text-roxo">48h</span>}
               </td>
               <td className="text-right">{num(p.quantidade)}</td>
-              <td className="text-right">{brl(p.valor_total)}</td>
               <td className="text-right">
-                {brl(pago)}
+                <Valor>{brl(p.valor_total)}</Valor>
+                {p.valor_envio > 0 && <div className="text-xs text-mute">+ envio <Valor>{brl(p.valor_envio)}</Valor></div>}
+              </td>
+              <td className="text-right">
+                <Valor>{brl(pago)}</Valor>
                 {pgs.length > 0 && (
                   <details className="text-left text-xs text-mute">
                     <summary className="cursor-pointer text-right">{pgs.length} pgto</summary>
                     {pgs.map((x) => (
                       <div key={x.id} className="flex items-center justify-end gap-1">
-                        {dataBR(x.data)} {brl(x.valor)}
+                        {dataBR(x.data)} <Valor>{brl(x.valor)}</Valor>
                         <Editar titulo="Editar pagamento" action={atualizarPagamento}>
                           <input type="hidden" name="id" value={x.id} />
                           <Campo nome="valor" rotulo="Valor (R$)" valor={paraCampo(x.valor)} decimal />
@@ -161,7 +165,7 @@ function TabelaPedidos({ lista, pagos, b }: { lista: Awaited<ReturnType<typeof c
                   </details>
                 )}
               </td>
-              <td className={`text-right ${saldo > 0.005 ? "text-amarelo" : "text-mute"}`}>{brl(Math.max(0, saldo))}</td>
+              <td className={`text-right ${saldo > 0.005 ? "text-amarelo" : "text-mute"}`}><Valor>{brl(Math.max(0, saldo))}</Valor></td>
               <td><span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs ${corStatus[st]}`}>{st}</span></td>
               <td>
                 {saldo > 0.005 ? (
