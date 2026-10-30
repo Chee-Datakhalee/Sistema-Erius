@@ -4,18 +4,19 @@ import { mesDe, somaMes, mesCurto } from "./format";
 import { LIMITES, NAO_DESPESA } from "./constants";
 
 export type Pedido = {
-  id: number; cliente: string; servico: string; descricao: string | null; quantidade: number;
+  id: string; cliente: string; servico: string; descricao: string | null; quantidade: number;
   data: string; prioridade: boolean; valor_base: number; adicional_prioridade: number;
   valor_total: number; forma_pagto: string | null; observacoes: string | null;
+  valor_envio: number; // frete repassado ao cliente: entra no que ele paga, mas NÃO no faturamento
 };
-export type Pagamento = { id: number; pedido_id: number; data: string; valor: number; forma: string | null };
+export type Pagamento = { id: string; pedido_id: string; data: string; valor: number; forma: string | null };
 export type Gasto = {
-  id: number; data: string; descricao: string; categoria: string; parcela_atual: number | null;
+  id: string; data: string; descricao: string; categoria: string; parcela_atual: number | null;
   parcela_total: number | null; valor: number; observacoes: string | null;
 };
-export type Fixa = { id: number; nome: string; categoria: string; valor: number; ativo: boolean };
+export type Fixa = { id: string; nome: string; categoria: string; valor: number; ativo: boolean };
 export type Config = { caixa_inicial: number; adicional_prioridade: number; markup_revenda: number; das_mensal: number; assessor_inicio: string };
-export type Preco = { tamanho: string; quantidade: number; preco: number };
+import type { Produto } from "./produtos";
 
 const n = (v: unknown) => Number(v ?? 0);
 
@@ -32,28 +33,31 @@ export async function carregar() {
     q<Pagamento>(s.from("pagamentos").select("*").order("data", { ascending: false })),
     q<Gasto>(s.from("gastos").select("*").order("data", { ascending: false }).order("id", { ascending: false })),
     q<Fixa>(s.from("despesas_fixas").select("*").order("id")),
-    q<Config>(s.from("config").select("*").eq("id", 1)),
+    q<Config>(s.from("config").select("*")),
   ]);
-  pedidos.forEach((p) => { p.valor_base = n(p.valor_base); p.valor_total = n(p.valor_total); p.adicional_prioridade = n(p.adicional_prioridade); });
+  pedidos.forEach((p) => { p.valor_base = n(p.valor_base); p.valor_total = n(p.valor_total); p.adicional_prioridade = n(p.adicional_prioridade); p.valor_envio = n(p.valor_envio); });
   pagamentos.forEach((p) => (p.valor = n(p.valor)));
   gastos.forEach((g) => (g.valor = n(g.valor)));
   fixas.forEach((f) => (f.valor = n(f.valor)));
   const config: Config = cfg[0]
     ? {
         caixa_inicial: n(cfg[0].caixa_inicial), adicional_prioridade: n(cfg[0].adicional_prioridade), markup_revenda: n(cfg[0].markup_revenda),
-        das_mensal: n(cfg[0].das_mensal), assessor_inicio: cfg[0].assessor_inicio ?? "2026-10-01",
+        das_mensal: n(cfg[0].das_mensal), assessor_inicio: cfg[0].assessor_inicio ?? new Date().toISOString().slice(0, 10),
       }
-    : { caixa_inicial: 0, adicional_prioridade: 35, markup_revenda: 30, das_mensal: 0, assessor_inicio: "2026-10-01" };
+    : { caixa_inicial: 0, adicional_prioridade: 0, markup_revenda: 30, das_mensal: 0, assessor_inicio: new Date().toISOString().slice(0, 10) };
   return { pedidos, pagamentos, gastos, fixas, config };
 }
 
 export type Base = Awaited<ReturnType<typeof carregar>>;
 
 export function pagoPorPedido(pagamentos: Pagamento[]) {
-  const m = new Map<number, number>();
+  const m = new Map<string, number>();
   pagamentos.forEach((p) => m.set(p.pedido_id, (m.get(p.pedido_id) ?? 0) + p.valor));
   return m;
 }
+
+/** O que o cliente deve pagar no pedido: serviços (faturamento) + envio, se houver. */
+export const cobrado = (p: { valor_total: number; valor_envio?: number }) => p.valor_total + (p.valor_envio ?? 0);
 
 export function statusPedido(total: number, pago: number) {
   if (pago <= 0) return "Não pago";
@@ -117,7 +121,7 @@ export function montarDashboard(b: Base, mes: string) {
   const totalRecebido = b.pagamentos.reduce((s, p) => s + p.valor, 0);
   const totalGasto = b.gastos.reduce((s, g) => s + g.valor, 0);
   const pendentes = b.pedidos
-    .map((p) => ({ p, saldo: p.valor_total - (pagos.get(p.id) ?? 0) }))
+    .map((p) => ({ p, saldo: cobrado(p) - (pagos.get(p.id) ?? 0) }))
     .filter((x) => x.saldo > 0.005);
   const aReceber = pendentes.reduce((s, x) => s + x.saldo, 0);
   const caixaAtual = b.config.caixa_inicial + totalRecebido - totalGasto;
@@ -171,21 +175,36 @@ function fmt(v: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 }
 
-export async function carregarPrecos() {
-  const rows = await q<Preco>(db().from("precos").select("*").order("quantidade"));
+export async function carregarProdutos() {
+  const rows = await q<Produto>(db().from("produtos").select("*").eq("ativo", true).order("nome"));
   return rows.map((r) => ({ ...r, preco: n(r.preco) }));
 }
 
+export async function carregarPadroes() {
+  const { data } = await db().from("config").select("prazo_padrao, pagamento_padrao, validade_dias, adicional_prioridade").maybeSingle();
+  return {
+    prazo: (data?.prazo_padrao as string | null) ?? "",
+    pagamento: (data?.pagamento_padrao as string | null) ?? "",
+    validade: Number(data?.validade_dias ?? 15),
+    adicional: Number(data?.adicional_prioridade ?? 0),
+  };
+}
+export type Padroes = Awaited<ReturnType<typeof carregarPadroes>>;
+
 export type OrcamentoItem = {
-  id: number; orcamento_id: number; tipo: "etiqueta" | "manual"; servico: string;
+  id: string; orcamento_id: string; tipo: "etiqueta" | "manual"; servico: string;
   tamanho: string | null; quantidade: number; descricao: string | null;
   valor_unitario: number; valor_total: number; ordem: number;
+  medidas?: string | null; // lista de medidas (modo metragem total)
 };
 export type Orcamento = {
-  id: number; cliente: string; data: string; validade_dias: number;
+  id: string; numero: number; cliente: string; data: string; validade_dias: number;
   status: "pendente" | "aprovado" | "recusado"; prazo: string | null;
   pagamento: string | null; observacoes: string | null;
   desconto_a_vista: number | null; bonificacao: string | null; producao_prioritaria: boolean;
+  urgencia_tipo?: "valor" | "percentual"; urgencia_valor?: number | null;
+  mostrar_prazo?: boolean; mostrar_arte?: boolean;
+  envio?: boolean; valor_envio?: number; // envio (Correios): soma no total do cliente, não aparece no PDF
 };
 
 export async function carregarOrcamentos() {
@@ -195,8 +214,13 @@ export async function carregarOrcamentos() {
     q<OrcamentoItem>(s.from("orcamento_itens").select("*").order("ordem")),
   ]);
   itensRaw.forEach((i) => { i.valor_unitario = n(i.valor_unitario); i.valor_total = n(i.valor_total); });
-  orcs.forEach((o) => { o.desconto_a_vista = o.desconto_a_vista != null ? n(o.desconto_a_vista) : null; });
-  const itensPorOrc = new Map<number, OrcamentoItem[]>();
+  orcs.forEach((o) => {
+    o.desconto_a_vista = o.desconto_a_vista != null ? n(o.desconto_a_vista) : null;
+    o.urgencia_valor = o.urgencia_valor != null ? n(o.urgencia_valor) : null;
+    o.envio = !!o.envio;
+    o.valor_envio = n(o.valor_envio);
+  });
+  const itensPorOrc = new Map<string, OrcamentoItem[]>();
   itensRaw.forEach((i) => {
     if (!itensPorOrc.has(i.orcamento_id)) itensPorOrc.set(i.orcamento_id, []);
     itensPorOrc.get(i.orcamento_id)!.push(i);
@@ -206,13 +230,13 @@ export async function carregarOrcamentos() {
 
 export type StatusOS = "aberta" | "producao" | "pronta" | "entregue";
 export type OSItem = {
-  id: number; os_id: number; servico: string; descricao: string;
+  id: string; os_id: string; servico: string; descricao: string;
   quantidade: number; valor_unitario: number; valor_total: number; ordem: number;
 };
 export type OS = {
-  id: number; cliente: string; telefone: string | null; data: string; prazo_entrega: string | null;
-  status: StatusOS; forma_pagto: string | null; observacoes: string | null; pedido_id: number | null;
-  orcamento_id?: number | null;
+  id: string; numero: number; cliente: string; telefone: string | null; data: string; prazo_entrega: string | null;
+  status: StatusOS; forma_pagto: string | null; observacoes: string | null; pedido_id: string | null;
+  orcamento_id?: string | null;
 };
 
 export async function carregarOS() {
@@ -222,7 +246,7 @@ export async function carregarOS() {
     q<OSItem>(s.from("os_itens").select("*").order("ordem")),
   ]);
   itensRaw.forEach((i) => { i.valor_unitario = n(i.valor_unitario); i.valor_total = n(i.valor_total); });
-  const porOS = new Map<number, OSItem[]>();
+  const porOS = new Map<string, OSItem[]>();
   itensRaw.forEach((i) => {
     if (!porOS.has(i.os_id)) porOS.set(i.os_id, []);
     porOS.get(i.os_id)!.push(i);
